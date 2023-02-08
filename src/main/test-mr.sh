@@ -20,6 +20,7 @@ then
 fi
 
 TIMEOUT=timeout
+TIMEOUT2=""
 if timeout 2s sleep 1 > /dev/null 2>&1
 then
   :
@@ -35,7 +36,9 @@ else
 fi
 if [ "$TIMEOUT" != "" ]
 then
-  TIMEOUT+=" -k 2s 50s "
+  TIMEOUT2=$TIMEOUT
+  TIMEOUT2+=" -k 2s 120s "
+  TIMEOUT+=" -k 2s 45s "
 fi
 
 # run the test in a fresh sub-directory.
@@ -276,30 +279,30 @@ sort mr-out-0 > mr-correct-crash.txt
 rm -f mr-out*
 
 rm -f mr-done
-($TIMEOUT ../mrcoordinator ../pg*txt ; touch mr-done ) &
+($TIMEOUT2 ../mrcoordinator ../pg*txt ; touch mr-done ) &
 sleep 1
 
 # start multiple workers
-$TIMEOUT ../mrworker ../../mrapps/crash.so &
+$TIMEOUT2 ../mrworker ../../mrapps/crash.so &
 
 # mimic rpc.go's coordinatorSock()
 SOCKNAME=/var/tmp/5840-mr-`id -u`
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    $TIMEOUT ../mrworker ../../mrapps/crash.so
+    $TIMEOUT2 ../mrworker ../../mrapps/crash.so
     sleep 1
   done ) &
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    $TIMEOUT ../mrworker ../../mrapps/crash.so
+    $TIMEOUT2 ../mrworker ../../mrapps/crash.so
     sleep 1
   done ) &
 
 while [ -e $SOCKNAME -a ! -f mr-done ]
 do
-  $TIMEOUT ../mrworker ../../mrapps/crash.so
+  $TIMEOUT2 ../mrworker ../../mrapps/crash.so
   sleep 1
 done
 
