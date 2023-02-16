@@ -1222,3 +1222,49 @@ func TestSnapshotAllCrash2D(t *testing.T) {
 	}
 	cfg.end()
 }
+
+// do servers correctly initialize their in-memory copy of the snapshot, making
+// sure that future writes to persistent state don't lose state?
+func TestSnapshotInit2D(t *testing.T) {
+	servers := 3
+	cfg := make_config(t, servers, false, true)
+	defer cfg.cleanup()
+
+	cfg.begin("Test (2D): snapshot initialization after crash")
+	cfg.one(rand.Int(), servers, true)
+
+	// enough ops to make a snapshot
+	nn := SnapShotInterval + 1
+	for i := 0; i < nn; i++ {
+		cfg.one(rand.Int(), servers, true)
+	}
+
+	// crash all
+	for i := 0; i < servers; i++ {
+		cfg.crash1(i)
+	}
+
+	// revive all
+	for i := 0; i < servers; i++ {
+		cfg.start1(i, cfg.applierSnap)
+		cfg.connect(i)
+	}
+
+	// a single op, to get something to be written back to persistent storage.
+	cfg.one(rand.Int(), servers, true)
+
+	// crash all
+	for i := 0; i < servers; i++ {
+		cfg.crash1(i)
+	}
+
+	// revive all
+	for i := 0; i < servers; i++ {
+		cfg.start1(i, cfg.applierSnap)
+		cfg.connect(i)
+	}
+
+	// do another op to trigger potential bug
+	cfg.one(rand.Int(), servers, true)
+	cfg.end()
+}
