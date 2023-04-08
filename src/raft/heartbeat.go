@@ -18,18 +18,19 @@ func (rf *Raft) makeHeartbeatArgs(to int) *HeartbeatArgs {
 	return args
 }
 
-func (rf *Raft) sendHeartbeat(to int, args *HeartbeatArgs) {
+func (rf *Raft) sendHeartbeat(args *HeartbeatArgs) {
 	reply := HeartbeatReply{}
-	if ok := rf.peers[to].Call("Raft.Heartbeat", args, &reply); ok {
+	if ok := rf.peers[args.To].Call("Raft.Heartbeat", args, &reply); ok {
 		rf.handleHeartbeatReply(args, &reply)
 	}
 }
 
 func (rf *Raft) broadcastHeartbeat() {
+	rf.logger.bcastHBET()
 	for i := range rf.peers {
 		if i != rf.me {
 			args := rf.makeHeartbeatArgs(i)
-			go rf.sendHeartbeat(i, args)
+			go rf.sendHeartbeat(args)
 		}
 	}
 }
@@ -38,6 +39,8 @@ func (rf *Raft) broadcastHeartbeat() {
 func (rf *Raft) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
+	rf.logger.recvHBET(args)
 
 	reply.From = rf.me
 	reply.To = args.From

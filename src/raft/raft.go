@@ -64,6 +64,8 @@ type Raft struct {
 
 	applyCh                chan<- ApplyMsg
 	hasNewCommittedEntries sync.Cond
+
+	logger Logger
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -82,6 +84,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+
+	rf.logger.init(false, "log")
+	rf.logger.r = rf
 
 	rf.applyCh = applyCh
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
@@ -156,19 +161,22 @@ func (rf *Raft) ticker() {
 
 		switch rf.state {
 		case Follower:
+			fallthrough
+		case Candidate:
 			if rf.pastElectionTimeout() {
+				rf.logger.elecTimeout()
 				rf.becomeCandidate()
+				rf.broadcastRequestVote()
 				rf.resetElectionTimer()
 			}
 
 		case Leader:
+			// TODO: implement step down if no majority heartbeat responses.
 			if rf.pastHeartbeatTimeout() {
+				rf.logger.beatTimeout()
 				rf.broadcastHeartbeat()
 				rf.resetHeartbeatTimer()
 			}
-
-		case Candidate:
-			// do nothing.
 		}
 
 		rf.mu.Unlock()

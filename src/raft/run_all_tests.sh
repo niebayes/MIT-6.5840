@@ -1,0 +1,1 @@
+python3 dstest -r --iter 100 --workers 10 --timeout 40 --output out.log TestInitialElection2A TestReElection2A TestManyElections2A
