@@ -190,6 +190,11 @@ func (l *Logger) elecTimeout() {
 	l.printf(ELEC, "N%v ETO (S:%v T:%v)", r.me, r.state, r.term)
 }
 
+func (l *Logger) stepDown() {
+	r := l.r
+	l.printf(ELEC, "N%v STD (T:%v)", r.me, r.term)
+}
+
 func (l *Logger) stateToCandidate() {
 	r := l.r
 	l.printf(ELEC, "N%v %v->%v (T:%v)", r.me, r.state, Candidate, r.term)

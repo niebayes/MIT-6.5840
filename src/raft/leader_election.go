@@ -25,11 +25,11 @@ func (rf *Raft) resetVote() {
 	rf.votedTo = None
 }
 
-func (rf *Raft) becomeFollower(term uint64) {
+func (rf *Raft) becomeFollower(term uint64, forced bool) {
 	oldTerm := rf.term
 
 	// FIXME: how about leader?
-	if term > rf.term || rf.state == Candidate {
+	if forced || (term > rf.term || rf.state == Candidate) {
 		rf.term = term
 		rf.logger.stateToFollower(oldTerm)
 		rf.state = Follower
@@ -37,7 +37,6 @@ func (rf *Raft) becomeFollower(term uint64) {
 	}
 	// reset election timer to not immediately start a new round of election to compete with the current leader.
 	rf.resetElectionTimer()
-
 }
 
 func (rf *Raft) becomeCandidate() {
@@ -49,7 +48,7 @@ func (rf *Raft) becomeCandidate() {
 }
 
 func (rf *Raft) becomeLeader() {
-	rf.resetTrackers()
+	rf.resetTrackedIndexes()
 	rf.logger.stateToLeader()
 	rf.state = Leader
 }
@@ -102,7 +101,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.term {
-		rf.becomeFollower(args.Term)
+		rf.becomeFollower(args.Term, false)
 	}
 
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
@@ -137,8 +136,11 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 
 	rf.logger.recvRVOTRes(reply)
 
+	rf.peerTrackers[reply.From].lastAck = time.Now()
+
 	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term)
+		rf.becomeFollower(reply.Term, false)
+		return
 	}
 
 	if args.Term == reply.Term && rf.state == Candidate && reply.VotedTo == rf.me {

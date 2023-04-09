@@ -50,7 +50,7 @@ func (rf *Raft) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
 		return
 	}
 
-	rf.becomeFollower(args.Term)
+	rf.becomeFollower(args.Term, false)
 	lastNewEntryIndex := uint64(0)
 	if args.CommittedIndex > rf.log.committed {
 		index := min(args.CommittedIndex, lastNewEntryIndex)
@@ -64,7 +64,10 @@ func (rf *Raft) handleHeartbeatReply(args *HeartbeatArgs, reply *HeartbeatReply)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	rf.peerTrackers[reply.From].lastAck = time.Now()
+
 	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term)
+		rf.becomeFollower(reply.Term, false)
+		return
 	}
 }

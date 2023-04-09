@@ -29,6 +29,7 @@ import (
 
 const tickInterval = 50 * time.Millisecond
 const heartbeatTimeout = 100 * time.Millisecond
+const checkQuorunTimeout = 2 * baseElectionTimeout
 const None = -1
 
 type PeerState int
@@ -57,6 +58,8 @@ type Raft struct {
 
 	heartbeatTimeout time.Duration
 	lastHeartbeat    time.Time
+
+	lastCheckQuorum time.Time
 
 	log Log
 
@@ -92,15 +95,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
 
 	rf.log = makeLog()
-	rf.resetTrackers()
+	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
+	rf.resetTrackedIndexes()
 
-	rf.state = Follower
-	rf.term = 0
-	rf.resetVote()
-	rf.votedTo = None
-	rf.resetElectionTimer()
 	rf.heartbeatTimeout = heartbeatTimeout
 	rf.resetHeartbeatTimer()
+
+	rf.becomeFollower(0, true)
 
 	// initialize from state persisted before a crash
 	// rf.readPersist(persister.ReadRaftState())
@@ -171,7 +172,12 @@ func (rf *Raft) ticker() {
 			}
 
 		case Leader:
-			// TODO: implement step down if no majority heartbeat responses.
+			if !rf.quorumActive() {
+				rf.logger.stepDown()
+				rf.becomeFollower(rf.term, true)
+				break
+			}
+
 			if rf.pastHeartbeatTimeout() {
 				rf.logger.beatTimeout()
 				rf.broadcastHeartbeat()
