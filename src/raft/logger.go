@@ -232,14 +232,9 @@ func (l *Logger) recvRVOTRes(m *RequestVoteReply) {
 	l.printf(ELEC, "N%v <- N%v RVOT RES (T:%v V:%v)", r.me, m.From, m.Term, m.VotedTo)
 }
 
-func (l *Logger) recvVoteQuorum(num_supports uint64) {
+func (l *Logger) recvVoteQuorum() {
 	r := l.r
-	l.printf(ELEC, "N%v <- VOTE QUORUM (T:%v NS:%v NN:%v)", r.me, r.term, num_supports, len(r.peers))
-}
-
-func (l *Logger) recvDenyQuorum(num_denials uint64) {
-	r := l.r
-	l.printf(ELEC, "N%v <- DENY QUORUM (T:%v ND:%v NN:%v)", r.me, r.term, num_denials, len(r.peers))
+	l.printf(ELEC, "N%v <- VOTE QUORUM (T:%v)", r.me, r.term)
 }
 
 func (l *Logger) stateToLeader() {
@@ -256,86 +251,84 @@ func (l *Logger) stateToFollower(oldTerm uint64) {
 // log replication events.
 //
 
-// func (l *Logger) appendEnts(ents []pb.Entry) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v +e (LN:%v)", r.me, len(ents))
-// 	// l.printEnts(LRPE, r.me, ents)
-// }
+func (l *Logger) appendEnts(ents []Entry) {
+	r := l.r
+	l.printf(LRPE, "N%v +e (LN:%v)", r.me, len(ents))
+	// l.printEnts(LRPE, r.me, ents)
+}
 
-// func (l *Logger) bcastAENT() {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v @ AENT", r.me)
-// }
+func (l *Logger) bcastAENT() {
+	r := l.r
+	l.printf(LRPE, "N%v @ AENT", r.me)
+}
 
-// func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []pb.Entry, to uint64) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.term, r.RaftLog.committed, prevLogIndex, prevLogTerm, len(ents))
-// 	// l.printEnts(LRPE, r.me, ents)
-// }
+func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []Entry, to uint64) {
+	r := l.r
+	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.term, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
+	// l.printEnts(LRPE, r.me, ents)
+}
 
-// func (l *Logger) recvAENT(m pb.Message) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v <- N%v AENT (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, m.From, m.term, m.Commit, m.Index, m.LogTerm, len(m.Entries))
-// }
+func (l *Logger) recvAENT(m *AppendEntriesArgs) {
+	r := l.r
+	l.printf(LRPE, "N%v <- N%v AENT (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, m.From, m.Term, m.CommittedIndex, m.PrevLogIndex, m.PrevLogTerm, len(m.Entries))
+}
 
-// var reasonMap = [...]string{
-// 	"NO", // not reject
-// 	"IC", // index conflict.
-// 	"TC", // term conflict.
-// }
+type RejectReason int
 
-// func (l *Logger) rejectEnts(reason pb.RejectReason, from, prevLogIndex, prevLogTerm uint64) {
-// 	r := l.r
-// 	if reason == pb.RejectReason_IndexConflict {
-// 		l.printf(LRPE, "N%v !e<- N%v COZ %v (PI:%v LI:%v)", r.me, from, reasonMap[reason], prevLogIndex, r.RaftLog.LastIndex())
-// 	} else {
-// 		term, _ := r.RaftLog.term(prevLogIndex)
-// 		l.printf(LRPE, "N%v !e<- N%v COZ %v (PT:%v T:%v)", r.me, from, reasonMap[reason], prevLogTerm, term)
-// 	}
-// }
+const (
+	Accepted RejectReason = iota
+	IndexConflict
+	TermConflict
+)
 
-// func (l *Logger) acceptEnts(from uint64) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v &e<- N%v", r.me, from)
-// }
+var reasonMap = [...]string{
+	"NO", // not reject
+	"IC", // index conflict.
+	"TC", // term conflict.
+}
 
-// func (l *Logger) discardEnts(ents []pb.Entry) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v -e (LN:%v)", r.me, len(ents))
-// 	l.printEnts(LRPE, r.me, ents)
-// }
+func (l *Logger) rejectEnts(from int) {
+	r := l.r
+	l.printf(LRPE, "N%v !e<- N%v", r.me, from)
+}
 
-// func (l *Logger) recvAENTRes(m pb.Message) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v <- N%v AENT RES (T:%v R:%v RR:%v NI:%v CT:%v)", r.me, m.From, m.term, m.Reject, reasonMap[m.Reason], m.NextIndex, m.ConflictTerm)
-// }
+func (l *Logger) acceptEnts(from uint64) {
+	r := l.r
+	l.printf(LRPE, "N%v &e<- N%v", r.me, from)
+}
 
-// func (l *Logger) updateProgOf(me, oldNext, oldMatch, newNext, newMatch uint64) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v ^pr N%v (NI:%v MI:%v) -> (NI:%v MI:%v)", r.me, me, oldNext, oldMatch, newNext, newMatch)
-// }
+func (l *Logger) discardEnts(ents []Entry) {
+	r := l.r
+	l.printf(LRPE, "N%v -e (LN:%v)", r.me, len(ents))
+	// l.printEnts(LRPE, r.me, ents)
+}
 
-// func (l *Logger) recvAppendQuorum(cnt int) {
-// 	r := l.r
-// 	l.printf(ELEC, "N%v <- APED QUORUM (NA:%v NN:%v)", r.me, cnt, len(r.Prs))
-// }
+func (l *Logger) recvAENTRes(m *AppendEntriesReply) {
+	r := l.r
+	l.printf(LRPE, "N%v <- N%v AENT RES (T:%v E:%v CT:%v FCI:%v LI:%v)", r.me, m.From, m.Term, m.Err, m.ConflictTerm, m.FirstConflictIndex, m.LastLogIndex)
+}
 
-// func (l *Logger) updateCommitted(oldCommitted uint64) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v ^ci (CI:%v) -> (CI:%v)", r.me, oldCommitted, r.RaftLog.committed)
-// }
+func (l *Logger) updateProgOf(me, oldNext, oldMatch, newNext, newMatch uint64) {
+	r := l.r
+	l.printf(LRPE, "N%v ^pr N%v (NI:%v MI:%v) -> (NI:%v MI:%v)", r.me, me, oldNext, oldMatch, newNext, newMatch)
+}
 
-// func (l *Logger) updateApplied(oldApplied uint64) {
-// 	r := l.r
-// 	l.printf(LRPE, "N%v ^ai (AI:%v) -> (AI:%v)", r.me, oldApplied, r.RaftLog.applied)
-// }
+func (l *Logger) updateCommitted(oldCommitted uint64) {
+	r := l.r
+	l.printf(LRPE, "N%v ^ci (CI:%v) -> (CI:%v)", r.me, oldCommitted, r.log.committed)
+}
 
-// func (l *Logger) printEnts(topic logTopic, me uint64, ents []pb.Entry) {
-// 	for _, ent := range ents {
-// 		// l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.term, string(ent.Data))
-// 		l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.term)
-// 	}
-// }
+func (l *Logger) updateApplied(oldApplied uint64) {
+	r := l.r
+	l.printf(LRPE, "N%v ^ai (AI:%v) -> (AI:%v)", r.me, oldApplied, r.log.applied)
+}
+
+func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
+	for _, ent := range ents {
+		// l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.term, string(ent.Data))
+		l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
+	}
+}
 
 //
 // heartbeat events.

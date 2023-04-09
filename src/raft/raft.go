@@ -29,7 +29,6 @@ import (
 
 const tickInterval = 50 * time.Millisecond
 const heartbeatTimeout = 100 * time.Millisecond
-const checkQuorunTimeout = 2 * baseElectionTimeout
 const None = -1
 
 type PeerState int
@@ -58,8 +57,6 @@ type Raft struct {
 
 	heartbeatTimeout time.Duration
 	lastHeartbeat    time.Time
-
-	lastCheckQuorum time.Time
 
 	log Log
 
@@ -148,14 +145,6 @@ func (rf *Raft) GetState() (int, bool) {
 	return int(rf.term), rf.state == Leader
 }
 
-// func (rf *Raft) committer() {
-// 	for !rf.killed() {
-// 		rf.mu.Lock()
-
-// 		rf.mu.Unlock()
-// 	}
-// }
-
 func (rf *Raft) ticker() {
 	for !rf.killed() {
 		rf.mu.Lock()
@@ -183,6 +172,8 @@ func (rf *Raft) ticker() {
 				rf.broadcastHeartbeat()
 				rf.resetHeartbeatTimer()
 			}
+
+			rf.broadcastAppendEntries()
 		}
 
 		rf.mu.Unlock()

@@ -92,8 +92,28 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 	return log.entries[start:end], nil
 }
 
+func (log *Log) truncateSuffix(index uint64) {
+	if index <= log.firstIndex() || index > log.lastIndex() {
+		return
+	}
+
+	index = log.toArrayIndex(index)
+	log.entries = log.entries[:index]
+}
+
+func (log *Log) append(entries []Entry) {
+	log.entries = append(log.entries, entries...)
+}
+
 func (log *Log) committedTo(index uint64) {
 	log.committed = index
+}
+
+func (log *Log) maybeCommittedTo(leaderCommittedIndex uint64) {
+	if leaderCommittedIndex > log.committed {
+		index := min(leaderCommittedIndex, log.lastIndex())
+		log.committedTo(index)
+	}
 }
 
 func (log *Log) appliedTo(index uint64) {

@@ -102,6 +102,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if args.Term > rf.term {
 		rf.becomeFollower(args.Term, false)
+		reply.Term = rf.term
 	}
 
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
@@ -113,8 +114,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		lastLogTerm, _ := rf.log.term(lastLogIndex)
 		rf.logger.rejectVoteTo(args.From, args.LastLogIndex, args.LastLogTerm, lastLogIndex, lastLogTerm)
 	}
-
-	reply.Term = rf.term
 }
 
 func (rf *Raft) receivedMajorityVotes() bool {
@@ -125,7 +124,7 @@ func (rf *Raft) receivedMajorityVotes() bool {
 		}
 	}
 	if 2*votes > len(rf.peers) {
-		rf.logger.recvVoteQuorum(uint64(votes))
+		rf.logger.recvVoteQuorum()
 	}
 	return 2*votes > len(rf.peers)
 }

@@ -51,13 +51,9 @@ func (rf *Raft) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
 	}
 
 	rf.becomeFollower(args.Term, false)
-	lastNewEntryIndex := uint64(0)
-	if args.CommittedIndex > rf.log.committed {
-		index := min(args.CommittedIndex, lastNewEntryIndex)
-		rf.log.committedTo(index)
-	}
-
 	reply.Term = rf.term
+
+	rf.log.maybeCommittedTo(args.CommittedIndex)
 }
 
 func (rf *Raft) handleHeartbeatReply(args *HeartbeatArgs, reply *HeartbeatReply) {
