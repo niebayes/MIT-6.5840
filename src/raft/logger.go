@@ -262,7 +262,7 @@ func (l *Logger) bcastAENT() {
 	l.printf(LRPE, "N%v @ AENT", r.me)
 }
 
-func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []Entry, to uint64) {
+func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []Entry, to int) {
 	r := l.r
 	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.term, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
 	// l.printEnts(LRPE, r.me, ents)
@@ -292,7 +292,7 @@ func (l *Logger) rejectEnts(from int) {
 	l.printf(LRPE, "N%v !e<- N%v", r.me, from)
 }
 
-func (l *Logger) acceptEnts(from uint64) {
+func (l *Logger) acceptEnts(from int) {
 	r := l.r
 	l.printf(LRPE, "N%v &e<- N%v", r.me, from)
 }
@@ -308,9 +308,9 @@ func (l *Logger) recvAENTRes(m *AppendEntriesReply) {
 	l.printf(LRPE, "N%v <- N%v AENT RES (T:%v E:%v CT:%v FCI:%v LI:%v)", r.me, m.From, m.Term, m.Err, m.ConflictTerm, m.FirstConflictIndex, m.LastLogIndex)
 }
 
-func (l *Logger) updateProgOf(me, oldNext, oldMatch, newNext, newMatch uint64) {
+func (l *Logger) updateProgOf(peer int, oldNext, oldMatch, newNext, newMatch uint64) {
 	r := l.r
-	l.printf(LRPE, "N%v ^pr N%v (NI:%v MI:%v) -> (NI:%v MI:%v)", r.me, me, oldNext, oldMatch, newNext, newMatch)
+	l.printf(LRPE, "N%v ^pr N%v (NI:%v MI:%v) -> (NI:%v MI:%v)", r.me, peer, oldNext, oldMatch, newNext, newMatch)
 }
 
 func (l *Logger) updateCommitted(oldCommitted uint64) {
@@ -365,14 +365,14 @@ func (l *Logger) recvHBET(m *HeartbeatArgs) {
 // 	l.printf(PERS, "N%v be (SI:%v) -> (SI:%v)", r.me, oldlastStabledIndex, lastStabledIndex)
 // }
 
-// //
-// // peer interaction events.
-// //
+//
+// peer interaction events.
+//
 
-// func (l *Logger) startRaft() {
-// 	r := l.r
-// 	l.printf(PEER, "N%v START (T:%v V:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.committed, r.log.applied)
-// }
+func (l *Logger) startRaft() {
+	r := l.r
+	l.printf(PEER, "N%v START (T:%v V:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.committed, r.log.applied)
+}
 
 // //
 // // snapshot events

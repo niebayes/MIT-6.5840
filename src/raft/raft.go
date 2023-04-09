@@ -92,6 +92,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
 
 	rf.log = makeLog()
+	rf.log.logger = &rf.logger
+
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
 	rf.resetTrackedIndexes()
 
@@ -103,8 +105,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	// rf.readPersist(persister.ReadRaftState())
 
-	// start ticker goroutine to start elections
 	go rf.ticker()
+	go rf.committer()
 
 	return rf
 }
@@ -132,7 +134,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	index := rf.log.lastIndex() + 1
 	entry := Entry{Index: index, Term: rf.term, Data: command}
-	rf.log.entries = append(rf.log.entries, entry)
+	rf.log.append([]Entry{entry})
 
 	return int(index), int(rf.term), true
 }
@@ -168,7 +170,6 @@ func (rf *Raft) ticker() {
 			}
 
 			if rf.pastHeartbeatTimeout() {
-				rf.logger.beatTimeout()
 				rf.broadcastHeartbeat()
 				rf.resetHeartbeatTimer()
 			}

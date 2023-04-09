@@ -2,7 +2,7 @@ package raft
 
 import "errors"
 
-var ErrOutOfBound = errors.New("Index out of bound")
+var ErrOutOfBound = errors.New("index out of bound")
 
 type Entry struct {
 	Index uint64
@@ -25,6 +25,8 @@ type Log struct {
 
 	applied   uint64 // the highest log index of the log entry raft knows that the application has applied.
 	committed uint64 // the highest log index of the log entry raft knows that the raft cluster has committed.
+
+	logger *Logger
 }
 
 func makeLog() Log {
@@ -76,7 +78,7 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 		return nil, ErrOutOfBound
 	}
 
-	end = min(end, log.lastIndex())
+	end = min(end, log.lastIndex()+1)
 
 	if start == end {
 		return make([]Entry, 0), nil
@@ -92,33 +94,49 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 	return log.entries[start:end], nil
 }
 
+func (log *Log) clone(entries []Entry) []Entry {
+	cloned := make([]Entry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
 func (log *Log) truncateSuffix(index uint64) {
 	if index <= log.firstIndex() || index > log.lastIndex() {
 		return
 	}
 
 	index = log.toArrayIndex(index)
+	log.logger.discardEnts(log.entries[index:])
 	log.entries = log.entries[:index]
 }
 
 func (log *Log) append(entries []Entry) {
+	log.logger.appendEnts(entries)
 	log.entries = append(log.entries, entries...)
 }
 
 func (log *Log) committedTo(index uint64) {
+	oldCommitted := log.committed
 	log.committed = index
+	log.logger.updateCommitted(oldCommitted)
 }
 
-func (log *Log) maybeCommittedTo(leaderCommittedIndex uint64) {
-	if leaderCommittedIndex > log.committed {
-		index := min(leaderCommittedIndex, log.lastIndex())
-		log.committedTo(index)
+func (log *Log) newCommittedEntries() []Entry {
+	start := log.toArrayIndex(log.applied + 1)
+	end := log.toArrayIndex(log.committed + 1)
+	if start >= end {
+		return make([]Entry, 0)
 	}
+	return log.clone(log.entries[start:end])
 }
 
 func (log *Log) appliedTo(index uint64) {
+	oldApplied := log.applied
 	log.applied = index
+	log.logger.updateApplied(oldApplied)
 }
 
-func (log *Log) compactedTo(index uint64) {
+func (log *Log) compactedTo(index, term uint64) {
+	log.snapshotIndex = index
+	log.snapshotTerm = term
 }

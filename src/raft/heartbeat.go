@@ -53,7 +53,7 @@ func (rf *Raft) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
 	rf.becomeFollower(args.Term, false)
 	reply.Term = rf.term
 
-	rf.log.maybeCommittedTo(args.CommittedIndex)
+	rf.maybeCommittedTo(args.CommittedIndex)
 }
 
 func (rf *Raft) handleHeartbeatReply(args *HeartbeatArgs, reply *HeartbeatReply) {
