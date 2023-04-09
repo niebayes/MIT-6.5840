@@ -9,14 +9,14 @@ import (
 // the election timeout is in the range [T, 2T).
 const baseElectionTimeout = 300
 
+func (rf *Raft) pastElectionTimeout() bool {
+	return time.Since(rf.lastElection) > rf.electionTimeout
+}
+
 func (rf *Raft) resetElectionTimer() {
 	electionTimeout := baseElectionTimeout + (rand.Int63() % baseElectionTimeout)
 	rf.electionTimeout = time.Duration(electionTimeout) * time.Millisecond
 	rf.lastElection = time.Now()
-}
-
-func (rf *Raft) pastElectionTimeout() bool {
-	return time.Since(rf.lastElection) > rf.electionTimeout
 }
 
 func (rf *Raft) resetVote() {

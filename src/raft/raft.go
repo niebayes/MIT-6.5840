@@ -169,12 +169,12 @@ func (rf *Raft) ticker() {
 				break
 			}
 
+			forced := false
 			if rf.pastHeartbeatTimeout() {
-				rf.broadcastHeartbeat()
+				forced = true
 				rf.resetHeartbeatTimer()
 			}
-
-			rf.broadcastAppendEntries()
+			rf.broadcastAppendEntries(forced)
 		}
 
 		rf.mu.Unlock()

@@ -251,10 +251,11 @@ func (l *Logger) stateToFollower(oldTerm uint64) {
 // log replication events.
 //
 
+const printEnts = false
+
 func (l *Logger) appendEnts(ents []Entry) {
 	r := l.r
 	l.printf(LRPE, "N%v +e (LN:%v)", r.me, len(ents))
-	// l.printEnts(LRPE, r.me, ents)
 }
 
 func (l *Logger) bcastAENT() {
@@ -265,7 +266,7 @@ func (l *Logger) bcastAENT() {
 func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []Entry, to int) {
 	r := l.r
 	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.term, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
-	// l.printEnts(LRPE, r.me, ents)
+	l.printEnts(LRPE, r.me, ents)
 }
 
 func (l *Logger) recvAENT(m *AppendEntriesArgs) {
@@ -300,7 +301,7 @@ func (l *Logger) acceptEnts(from int) {
 func (l *Logger) discardEnts(ents []Entry) {
 	r := l.r
 	l.printf(LRPE, "N%v -e (LN:%v)", r.me, len(ents))
-	// l.printEnts(LRPE, r.me, ents)
+	l.printEnts(LRPE, r.me, ents)
 }
 
 func (l *Logger) recvAENTRes(m *AppendEntriesReply) {
@@ -324,9 +325,11 @@ func (l *Logger) updateApplied(oldApplied uint64) {
 }
 
 func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
-	for _, ent := range ents {
-		// l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.term, string(ent.Data))
-		l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
+	if printEnts {
+		for _, ent := range ents {
+			// l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.Term, ent.Data.(int))
+			l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
+		}
 	}
 }
 
@@ -334,17 +337,7 @@ func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
 // heartbeat events.
 //
 
-func (l *Logger) beatTimeout() {
-	r := l.r
-	l.printf(BEAT, "N%v BTO (S:%v T:%v)", r.me, r.state, r.term)
-}
-
-func (l *Logger) bcastHBET() {
-	r := l.r
-	l.printf(BEAT, "N%v @ HBET", r.me)
-}
-
-func (l *Logger) recvHBET(m *HeartbeatArgs) {
+func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	r := l.r
 	l.printf(BEAT, "N%v <- N%v HBET (T:%v CI:%v)", r.me, m.From, m.Term, m.CommittedIndex)
 }

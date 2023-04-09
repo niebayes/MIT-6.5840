@@ -4,6 +4,14 @@ import (
 	"time"
 )
 
+func (rf *Raft) pastHeartbeatTimeout() bool {
+	return time.Since(rf.lastHeartbeat) > rf.heartbeatTimeout
+}
+
+func (rf *Raft) resetHeartbeatTimer() {
+	rf.lastHeartbeat = time.Now()
+}
+
 func (rf *Raft) makeAppendEntriesArgs(to int) *AppendEntriesArgs {
 	args := new(AppendEntriesArgs)
 
@@ -28,9 +36,9 @@ func (rf *Raft) hasNewEntries(to int) bool {
 	return rf.log.lastIndex() >= rf.peerTrackers[to].nextIndex
 }
 
-func (rf *Raft) broadcastAppendEntries() {
+func (rf *Raft) broadcastAppendEntries(forced bool) {
 	for i := range rf.peers {
-		if i != rf.me && rf.hasNewEntries(i) {
+		if i != rf.me && (forced || rf.hasNewEntries(i)) {
 			args := rf.makeAppendEntriesArgs(i)
 			rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, i)
 			go rf.sendAppendEntries(args)
@@ -50,8 +58,7 @@ func (rf *Raft) checkLogPrefixMatched(leaderPrevLogIndex, leaderPrevLogTerm uint
 }
 
 func (rf *Raft) maybeCommittedTo(index uint64) {
-	if index > rf.log.committed {
-		index := min(index, rf.log.lastIndex())
+	if index := min(index, rf.log.lastIndex()); index > rf.log.committed {
 		rf.log.committedTo(index)
 		rf.hasNewCommittedEntries.Signal()
 	}
@@ -61,7 +68,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.recvAENT(args)
+	if len(args.Entries) > 0 {
+		rf.logger.recvAENT(args)
+	} else {
+		rf.logger.recvHBET(args)
+	}
 
 	reply.From = rf.me
 	reply.To = args.From
@@ -134,14 +145,19 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.peerTrackers[reply.From].nextIndex = max(rf.peerTrackers[reply.From].nextIndex, args.PrevLogIndex+uint64(len(args.Entries))+1)
 		rf.peerTrackers[reply.From].matchIndex = max(rf.peerTrackers[reply.From].matchIndex, rf.peerTrackers[reply.From].nextIndex-1)
 
+		newNext := rf.peerTrackers[reply.From].nextIndex
+		newMatch := rf.peerTrackers[reply.From].matchIndex
+		rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+
 		rf.maybeCommitMatched(rf.peerTrackers[reply.From].matchIndex)
 
 	default:
 		// TODO: add accelerated log backup.
 		rf.peerTrackers[reply.From].nextIndex--
+
+		newNext := rf.peerTrackers[reply.From].nextIndex
+		newMatch := rf.peerTrackers[reply.From].matchIndex
+		rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
 	}
 
-	newNext := rf.peerTrackers[reply.From].nextIndex
-	newMatch := rf.peerTrackers[reply.From].matchIndex
-	rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
 }

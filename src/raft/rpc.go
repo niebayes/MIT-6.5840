@@ -15,19 +15,6 @@ type RequestVoteReply struct {
 	VotedTo int
 }
 
-type HeartbeatArgs struct {
-	From           int
-	To             int
-	Term           uint64
-	CommittedIndex uint64
-}
-
-type HeartbeatReply struct {
-	From int
-	To   int
-	Term uint64
-}
-
 type AppendEntriesArgs struct {
 	From           int
 	To             int

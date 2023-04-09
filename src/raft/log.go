@@ -69,6 +69,12 @@ func (log *Log) term(index uint64) (uint64, error) {
 	return log.entries[index].Term, nil
 }
 
+func (log *Log) clone(entries []Entry) []Entry {
+	cloned := make([]Entry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
 // slice out log entries in the range [start, end).
 // if the start index is less than or equal to the first index, an error is returned.
 // if the end index is greater than the last log index, it's delimited to the last log index.
@@ -91,13 +97,7 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 	start = log.toArrayIndex(start)
 	end = log.toArrayIndex(end)
 
-	return log.entries[start:end], nil
-}
-
-func (log *Log) clone(entries []Entry) []Entry {
-	cloned := make([]Entry, len(entries))
-	copy(cloned, entries)
-	return cloned
+	return log.clone(log.entries[start:end]), nil
 }
 
 func (log *Log) truncateSuffix(index uint64) {
