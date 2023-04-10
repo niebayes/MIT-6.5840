@@ -65,21 +65,12 @@ func (rf *Raft) checkLogPrefixMatched(leaderPrevLogIndex, leaderPrevLogTerm uint
 }
 
 func (rf *Raft) maybeCommittedTo(index uint64) {
+	// FIXME: I doubt this `min` is necessary.
 	if index := min(index, rf.log.lastIndex()); index > rf.log.committed {
+		// TODO: add persistence for committed index and applied index.
 		rf.log.committedTo(index)
 		rf.hasNewCommittedEntries.Signal()
 	}
-}
-
-func (rf *Raft) truncateLogSuffix(index uint64) {
-	if rf.log.truncateSuffix(index) {
-		rf.persist()
-	}
-}
-
-func (rf *Raft) appendLog(entries []Entry) {
-	rf.log.append(entries)
-	rf.persist()
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -101,8 +92,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	rf.becomeFollower(args.Term, true)
-	reply.Term = rf.term
+	termChanged := rf.becomeFollower(args.Term)
+	if termChanged {
+		reply.Term = rf.term
+		defer rf.persist()
+	}
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {
@@ -118,13 +112,17 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	for i, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
-			rf.truncateLogSuffix(entry.Index)
-			rf.appendLog(args.Entries[i:])
+			rf.log.truncateSuffix(entry.Index)
+			rf.log.append(args.Entries[i:])
+			if !termChanged {
+				rf.persist()
+			}
 			break
 		}
 	}
 
-	rf.maybeCommittedTo(args.CommittedIndex)
+	lastNewLogIndex := min(args.CommittedIndex, args.PrevLogIndex+uint64(len(args.Entries)))
+	rf.maybeCommittedTo(lastNewLogIndex)
 }
 
 func (rf *Raft) quorumMatched(index uint64) bool {
@@ -156,7 +154,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 	rf.peerTrackers[reply.From].lastAck = time.Now()
 
 	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term, false)
+		rf.becomeFollower(reply.Term)
+		rf.persist()
 		return
 	}
 

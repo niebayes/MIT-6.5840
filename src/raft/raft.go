@@ -98,16 +98,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	if raftstate := rf.persister.ReadRaftState(); len(raftstate) > 0 {
 		rf.readPersist(raftstate)
 		rf.logger.restore()
+	} else {
+		rf.term = 0
+		rf.votedTo = None
 	}
+	rf.logger.stateToFollower(rf.term)
 
 	// update tracker indexes with the restored log entries.
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
 	rf.resetTrackedIndexes()
-
-	rf.becomeFollower(rf.term, true)
-
-	// initialize from state persisted before a crash
-	// rf.readPersist(persister.ReadRaftState())
 
 	go rf.ticker()
 	go rf.committer()
@@ -138,7 +137,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	index := rf.log.lastIndex() + 1
 	entry := Entry{Index: index, Term: rf.term, Data: command}
-	rf.appendLog([]Entry{entry})
+	rf.log.append([]Entry{entry})
+	rf.persist()
 
 	return int(index), int(rf.term), true
 }
@@ -169,7 +169,7 @@ func (rf *Raft) ticker() {
 		case Leader:
 			if !rf.quorumActive() {
 				rf.logger.stepDown()
-				rf.becomeFollower(rf.term, true)
+				rf.becomeFollower(rf.term)
 				break
 			}
 

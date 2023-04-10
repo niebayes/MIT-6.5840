@@ -19,46 +19,33 @@ func (rf *Raft) resetElectionTimer() {
 	rf.lastElection = time.Now()
 }
 
-func (rf *Raft) updateTerm(term uint64) {
-	if rf.term != term {
-		rf.term = term
-		rf.persist()
-	}
-}
-
-func (rf *Raft) updateVotedTo(votedTo int) {
-	if rf.votedTo != votedTo {
-		rf.votedTo = votedTo
-		rf.persist()
-	}
-}
-
-func (rf *Raft) resetVote() {
-	rf.votedMe = make([]bool, len(rf.peers))
-	rf.votedMe[rf.me] = true
-	rf.updateVotedTo(None)
-}
-
-func (rf *Raft) becomeFollower(term uint64, forced bool) {
+func (rf *Raft) becomeFollower(term uint64) bool {
+	termChanged := false
 	oldTerm := rf.term
 
-	if forced || term > rf.term {
-		rf.updateTerm(term)
-		if rf.state != Follower {
-			rf.state = Follower
-			rf.logger.stateToFollower(oldTerm)
-		}
-		rf.resetVote()
+	if term > rf.term {
+		rf.term = term
+		rf.votedTo = None
+		termChanged = true
 	}
+
+	if rf.state != Follower {
+		rf.state = Follower
+		rf.logger.stateToFollower(oldTerm)
+	}
+
 	// reset election timer to not immediately start a new round of election to compete with the current leader.
 	rf.resetElectionTimer()
+
+	return termChanged
 }
 
 func (rf *Raft) becomeCandidate() {
-	rf.updateTerm(rf.term + 1)
+	defer rf.persist()
+	rf.term++
+	rf.votedMe = make([]bool, len(rf.peers))
+	rf.votedTo = rf.me
 	rf.logger.stateToCandidate()
-	rf.resetVote()
-	rf.updateVotedTo(rf.me)
 	rf.state = Candidate
 }
 
@@ -122,19 +109,21 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.term {
-		rf.becomeFollower(args.Term, false)
-	}
-
-	if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
-		// step down to not compete with a more up-to-date candidate.
-		// this trick is used to work around a split vote issue found in testing.
-		rf.becomeFollower(args.Term, true)
+		rf.becomeFollower(args.Term)
+		defer rf.persist()
 	}
 	reply.Term = rf.term
 
+	// FIXME: I doubt this is necessary.
+	// if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
+	// 	// step down to not compete with a more up-to-date candidate.
+	// 	// this trick is used to work around a split vote issue found in testing.
+	// 	rf.becomeFollower(args.Term)
+	// }
+
 	// `rf.voted == args.From` guarantees that a candidate won't vote to another candidate.
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
-		rf.updateVotedTo(args.From)
+		rf.votedTo = args.From
 		reply.VotedTo = args.From
 		rf.logger.voteTo(args.From)
 
@@ -149,9 +138,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) receivedMajorityVotes() bool {
-	votes := 0
-	for _, votedMe := range rf.votedMe {
-		if votedMe {
+	votes := 1
+	for i, votedMe := range rf.votedMe {
+		if i != rf.me && votedMe {
 			votes++
 		}
 	}
@@ -170,7 +159,8 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 	rf.peerTrackers[reply.From].lastAck = time.Now()
 
 	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term, false)
+		rf.becomeFollower(reply.Term)
+		rf.persist()
 		return
 	}
 
