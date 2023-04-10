@@ -64,6 +64,19 @@ func (rf *Raft) checkLogPrefixMatched(leaderPrevLogIndex, leaderPrevLogTerm uint
 	return Matched
 }
 
+func (rf *Raft) findFirstConflict(index uint64) (uint64, uint64) {
+	conflictTerm, _ := rf.log.term(index)
+	firstConflictIndex := index
+	// warning: skip the snapshot index since it cannot conflict if all goes well.
+	for i := index - 1; i > rf.log.firstIndex(); i-- {
+		if term, _ := rf.log.term(i); term != conflictTerm {
+			break
+		}
+		firstConflictIndex = i
+	}
+	return conflictTerm, firstConflictIndex
+}
+
 func (rf *Raft) maybeCommittedTo(index uint64) {
 	// FIXME: I doubt this `min` is necessary.
 	if index := min(index, rf.log.lastIndex()); index > rf.log.committed {
@@ -100,15 +113,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {
-		// TODO: add accelerated log backup.
+		if reply.Err == IndexNotMatched {
+			reply.LastLogIndex = rf.log.lastIndex()
+		} else {
+			reply.ConflictTerm, reply.FirstConflictIndex = rf.findFirstConflict(args.PrevLogIndex)
+		}
+
 		rf.logger.rejectEnts(args.From)
 		return
 	}
 	rf.logger.acceptEnts(args.From)
-
-	if reply.Err != Matched {
-		panic("not matched")
-	}
 
 	for i, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
@@ -184,19 +198,32 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.maybeCommitMatched(rf.peerTrackers[reply.From].matchIndex)
 
 	case IndexNotMatched:
-		fallthrough
-		// TODO: add accelerated log backup.
-
-	case TermNotMatched:
-		// TODO: add accelerated log backup.
-
-		rf.peerTrackers[reply.From].nextIndex--
+		rf.peerTrackers[reply.From].nextIndex = reply.LastLogIndex + 1
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex
-		rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+		if newNext != oldNext || newMatch != oldMatch {
+			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+		}
 
-	default:
-		panic("invalid Err type")
+	case TermNotMatched:
+		newNextIndex := reply.FirstConflictIndex
+		// warning: skip the snapshot index since it cannot conflict if all goes well.
+		for i := rf.log.lastIndex(); i > rf.log.firstIndex(); i-- {
+			if term, _ := rf.log.term(i); term == reply.ConflictTerm {
+				newNextIndex = i
+				break
+			}
+		}
+
+		// FIXME: I doubt the `min` is correct.
+		// ensure the next index is reduced.
+		rf.peerTrackers[reply.From].nextIndex = min(newNextIndex, rf.peerTrackers[reply.From].nextIndex-1)
+
+		newNext := rf.peerTrackers[reply.From].nextIndex
+		newMatch := rf.peerTrackers[reply.From].matchIndex
+		if newNext != oldNext || newMatch != oldMatch {
+			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+		}
 	}
 }

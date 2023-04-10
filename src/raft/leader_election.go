@@ -80,12 +80,6 @@ func (rf *Raft) broadcastRequestVote() {
 	}
 }
 
-func (rf *Raft) otherMoreUpToDate(candidateLastLogIndex, candidateLastLogTerm uint64) bool {
-	lastLogIndex := rf.log.lastIndex()
-	lastLogTerm, _ := rf.log.term(lastLogIndex)
-	return candidateLastLogTerm > lastLogTerm || (candidateLastLogTerm == lastLogTerm && candidateLastLogIndex > lastLogIndex)
-}
-
 func (rf *Raft) eligibleToGrantVote(candidateLastLogIndex, candidateLastLogTerm uint64) bool {
 	lastLogIndex := rf.log.lastIndex()
 	lastLogTerm, _ := rf.log.term(lastLogIndex)
@@ -113,13 +107,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		defer rf.persist()
 	}
 	reply.Term = rf.term
-
-	// FIXME: I doubt this is necessary.
-	// if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
-	// 	// step down to not compete with a more up-to-date candidate.
-	// 	// this trick is used to work around a split vote issue found in testing.
-	// 	rf.becomeFollower(args.Term)
-	// }
 
 	// `rf.voted == args.From` guarantees that a candidate won't vote to another candidate.
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
