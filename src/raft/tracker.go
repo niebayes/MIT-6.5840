@@ -14,6 +14,7 @@ type PeerTracker struct {
 func (rf *Raft) resetTrackedIndexes() {
 	for i := range rf.peerTrackers {
 		rf.peerTrackers[i].nextIndex = rf.log.lastIndex() + 1
+		// FIXME: set to snapshot index?
 		rf.peerTrackers[i].matchIndex = 0
 	}
 }

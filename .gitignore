@@ -4,4 +4,4 @@ api.key
 *-handin.tar.gz
 .vscode
 .DS_Store
-out
+out*

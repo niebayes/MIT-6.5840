@@ -95,8 +95,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.heartbeatTimeout = heartbeatTimeout
 	rf.resetHeartbeatTimer()
 
-	rf.readPersist(rf.persister.ReadRaftState())
-	rf.logger.restore()
+	if raftstate := rf.persister.ReadRaftState(); len(raftstate) > 0 {
+		rf.readPersist(raftstate)
+		rf.logger.restore()
+	}
 
 	// update tracker indexes with the restored log entries.
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers))

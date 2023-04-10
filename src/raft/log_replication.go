@@ -112,6 +112,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	rf.logger.acceptEnts(args.From)
 
+	if reply.Err != Matched {
+		panic("not matched")
+	}
+
 	for i, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
 			rf.truncateLogSuffix(entry.Index)
@@ -156,7 +160,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		return
 	}
 
-	if rf.term != args.Term || rf.state != Leader {
+	// we must ensure that the peer is in the same state as when sending the args.
+	if rf.term != args.Term || rf.state != Leader || rf.peerTrackers[reply.From].nextIndex-1 != args.PrevLogIndex {
 		return
 	}
 
@@ -168,8 +173,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		// do nothing.
 
 	case Matched:
-		rf.peerTrackers[reply.From].nextIndex = max(rf.peerTrackers[reply.From].nextIndex, args.PrevLogIndex+uint64(len(args.Entries))+1)
-		rf.peerTrackers[reply.From].matchIndex = max(rf.peerTrackers[reply.From].matchIndex, rf.peerTrackers[reply.From].nextIndex-1)
+		rf.peerTrackers[reply.From].matchIndex = args.PrevLogIndex + uint64(len(args.Entries))
+		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex

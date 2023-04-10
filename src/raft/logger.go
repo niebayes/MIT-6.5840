@@ -11,6 +11,18 @@ import (
 // true to turn on debugging/logging.
 const debug = true
 const LOGTOFILE = false
+const printEnts = true
+
+func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
+	if printEnts {
+		for _, ent := range ents {
+			if ent.Index != 0 {
+				l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.Term, ent.Data.(int))
+				// l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
+			}
+		}
+	}
+}
 
 // what topic the log message is related to.
 // logs are organized by topics which further consists of events.
@@ -241,8 +253,6 @@ func (l *Logger) stateToFollower(oldTerm uint64) {
 // log replication events.
 //
 
-const printEnts = false
-
 func (l *Logger) appendEnts(ents []Entry) {
 	r := l.r
 	l.printf(LRPE, "N%v +e (LN:%v)", r.me, len(ents))
@@ -320,15 +330,6 @@ func (l *Logger) updateApplied(oldApplied uint64) {
 	l.printf(LRPE, "N%v ^ai (AI:%v) -> (AI:%v)", r.me, oldApplied, r.log.applied)
 }
 
-func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
-	if printEnts {
-		for _, ent := range ents {
-			// l.printf(topic, "N%v    (I:%v T:%v D:%v)", me, ent.Index, ent.Term, ent.Data.(int))
-			l.printf(topic, "N%v    (I:%v T:%v)", me, ent.Index, ent.Term)
-		}
-	}
-}
-
 //
 // heartbeat events.
 //
@@ -349,24 +350,18 @@ func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 
 func (l *Logger) restore() {
 	r := l.r
-	l.printf(PEER, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+	l.printf(PERS, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+	if printEnts {
+		l.printEnts(PERS, r.me, r.log.entries)
+	}
 }
 
 func (l *Logger) persist() {
 	r := l.r
-	l.printf(PEER, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
-}
-
-func (l *Logger) restoreEnts(ents []Entry) {
-	r := l.r
-	l.printf(PERS, "N%v rs (LN:%v)", r.me, len(ents))
-	l.printEnts(PERS, r.me, ents)
-}
-
-func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
-	r := l.r
-	// be: backup entries.
-	l.printf(PERS, "N%v be (SI:%v) -> (SI:%v)", r.me, oldlastStabledIndex, lastStabledIndex)
+	l.printf(PERS, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+	if printEnts {
+		l.printEnts(PERS, r.me, r.log.entries)
+	}
 }
 
 // //

@@ -108,8 +108,8 @@ func (log *Log) truncateSuffix(index uint64) bool {
 
 	index = log.toArrayIndex(index)
 	if len(log.entries[index:]) > 0 {
-		log.entries = log.entries[:index]
 		log.logger.discardEnts(log.entries[index:])
+		log.entries = log.entries[:index]
 		return true
 	}
 	return false

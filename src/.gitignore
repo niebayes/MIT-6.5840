@@ -10,5 +10,4 @@ mrtmp.*
 /main/mrcoordinator
 /main/mrsequential
 /main/mrworker
-out
-out.log
+out*
