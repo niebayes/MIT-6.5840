@@ -28,8 +28,7 @@ func (rf *Raft) resetVote() {
 func (rf *Raft) becomeFollower(term uint64, forced bool) {
 	oldTerm := rf.term
 
-	// FIXME: how about leader?
-	if forced || (term > rf.term || rf.state == Candidate) {
+	if forced || term > rf.term {
 		rf.term = term
 		rf.logger.stateToFollower(oldTerm)
 		rf.state = Follower
@@ -78,6 +77,12 @@ func (rf *Raft) broadcastRequestVote() {
 	}
 }
 
+func (rf *Raft) otherMoreUpToDate(candidateLastLogIndex, candidateLastLogTerm uint64) bool {
+	lastLogIndex := rf.log.lastIndex()
+	lastLogTerm, _ := rf.log.term(lastLogIndex)
+	return candidateLastLogTerm > lastLogTerm || (candidateLastLogTerm == lastLogTerm && candidateLastLogIndex > lastLogIndex)
+}
+
 func (rf *Raft) eligibleToGrantVote(candidateLastLogIndex, candidateLastLogTerm uint64) bool {
 	lastLogIndex := rf.log.lastIndex()
 	lastLogTerm, _ := rf.log.term(lastLogIndex)
@@ -102,11 +107,20 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if args.Term > rf.term {
 		rf.becomeFollower(args.Term, false)
-		reply.Term = rf.term
 	}
 
+	if rf.state == Candidate && rf.otherMoreUpToDate(args.LastLogIndex, args.LastLogTerm) {
+		// step down to not compete with a more up-to-date candidate.
+		// this trick is used to work around a split vote issue found in testing.
+		rf.becomeFollower(args.Term, true)
+	}
+	reply.Term = rf.term
+
+	// `rf.voted == args.From` guarantees that a candidate won't vote to another candidate.
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
 		rf.votedTo = args.From
+		// reset election timer to not compete with the candidate.
+		rf.resetElectionTimer()
 		reply.VotedTo = args.From
 		rf.logger.voteTo(args.From)
 	} else {
@@ -142,7 +156,11 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 		return
 	}
 
-	if args.Term == reply.Term && rf.state == Candidate && reply.VotedTo == rf.me {
+	if rf.term != args.Term || rf.state != Candidate {
+		return
+	}
+
+	if reply.VotedTo == rf.me {
 		rf.votedMe[reply.From] = true
 		if rf.receivedMajorityVotes() {
 			rf.becomeLeader()

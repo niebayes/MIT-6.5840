@@ -28,7 +28,7 @@ import (
 )
 
 const tickInterval = 50 * time.Millisecond
-const heartbeatTimeout = 100 * time.Millisecond
+const heartbeatTimeout = 150 * time.Millisecond
 const None = -1
 
 type PeerState int

@@ -304,9 +304,20 @@ func (l *Logger) discardEnts(ents []Entry) {
 	l.printEnts(LRPE, r.me, ents)
 }
 
+var errMap = [...]string{
+	"RJ", // rejected.
+	"MT", // matched.
+	"IN", // index not matched.
+	"TN", // term not matched.
+}
+
+func (err Err) String() string {
+	return errMap[err]
+}
+
 func (l *Logger) recvAENTRes(m *AppendEntriesReply) {
 	r := l.r
-	l.printf(LRPE, "N%v <- N%v AENT RES (T:%v E:%v CT:%v FCI:%v LI:%v)", r.me, m.From, m.Term, m.Err, m.ConflictTerm, m.FirstConflictIndex, m.LastLogIndex)
+	l.printf(LRPE, "N%v <- N%v AENT RES (T:%v E:%v CT:%v FCI:%v LI:%v)", r.me, m.From, m.Term, errMap[m.Err], m.ConflictTerm, m.FirstConflictIndex, m.LastLogIndex)
 }
 
 func (l *Logger) updateProgOf(peer int, oldNext, oldMatch, newNext, newMatch uint64) {
@@ -336,6 +347,11 @@ func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
 //
 // heartbeat events.
 //
+
+func (l *Logger) sendBeat(prevLogIndex, prevLogTerm uint64, to int) {
+	r := l.r
+	l.printf(LRPE, "N%v b-> N%v (T:%v CI:%v PI:%v PT:%v)", r.me, to, r.term, r.log.committed, prevLogIndex, prevLogTerm)
+}
 
 func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	r := l.r

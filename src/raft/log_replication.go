@@ -40,7 +40,14 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 	for i := range rf.peers {
 		if i != rf.me && (forced || rf.hasNewEntries(i)) {
 			args := rf.makeAppendEntriesArgs(i)
-			rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, i)
+
+			if len(args.Entries) > 0 {
+				// FIXME: figure out why this would log twice for a peer?
+				rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, i)
+			} else {
+				rf.logger.sendBeat(args.PrevLogIndex, args.PrevLogTerm, i)
+			}
+
 			go rf.sendAppendEntries(args)
 		}
 	}
@@ -77,12 +84,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.From = rf.me
 	reply.To = args.From
 	reply.Term = rf.term
+	reply.Err = Rejected
 
 	if args.Term < rf.term {
 		return
 	}
 
-	rf.becomeFollower(args.Term, false)
+	rf.becomeFollower(args.Term, true)
 	reply.Term = rf.term
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
@@ -137,27 +145,43 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		return
 	}
 
+	if rf.term != args.Term || rf.state != Leader {
+		return
+	}
+
 	oldNext := rf.peerTrackers[reply.From].nextIndex
 	oldMatch := rf.peerTrackers[reply.From].matchIndex
 
 	switch reply.Err {
+	case Rejected:
+		// do nothing.
+
 	case Matched:
 		rf.peerTrackers[reply.From].nextIndex = max(rf.peerTrackers[reply.From].nextIndex, args.PrevLogIndex+uint64(len(args.Entries))+1)
 		rf.peerTrackers[reply.From].matchIndex = max(rf.peerTrackers[reply.From].matchIndex, rf.peerTrackers[reply.From].nextIndex-1)
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex
-		rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+		if newNext != oldNext || newMatch != oldMatch {
+			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+		}
 
 		rf.maybeCommitMatched(rf.peerTrackers[reply.From].matchIndex)
 
-	default:
+	case IndexNotMatched:
+		fallthrough
 		// TODO: add accelerated log backup.
+
+	case TermNotMatched:
+		// TODO: add accelerated log backup.
+
 		rf.peerTrackers[reply.From].nextIndex--
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex
 		rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
-	}
 
+	default:
+		panic("invalid Err type")
+	}
 }
