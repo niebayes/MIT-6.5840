@@ -118,7 +118,6 @@ func (logger *Logger) init(logToFile bool, logFileName string) {
 }
 
 func (logger *Logger) setLogFile(filename string) {
-	// FIXME(bayes): What to do with this file if backed up?
 	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		log.Fatalf("failed to create file %v", filename)
@@ -136,15 +135,6 @@ func (logger *Logger) printf(topic logTopic, format string, a ...interface{}) {
 		prefix := fmt.Sprintf("%010d %v ", time, string(topic))
 		format = prefix + format
 		log.Printf(format, a...)
-	}
-}
-
-func (logger *Logger) close() {
-	if logger.logToFile {
-		err := logger.logFile.Close()
-		if err != nil {
-			log.Fatal("failed to close log file")
-		}
 	}
 }
 
@@ -258,11 +248,6 @@ func (l *Logger) appendEnts(ents []Entry) {
 	l.printf(LRPE, "N%v +e (LN:%v)", r.me, len(ents))
 }
 
-func (l *Logger) bcastAENT() {
-	r := l.r
-	l.printf(LRPE, "N%v @ AENT", r.me)
-}
-
 func (l *Logger) sendEnts(prevLogIndex, prevLogTerm uint64, ents []Entry, to int) {
 	r := l.r
 	l.printf(LRPE, "N%v e-> N%v (T:%v CI:%v PI:%v PT:%v LN:%v)", r.me, to, r.term, r.log.committed, prevLogIndex, prevLogTerm, len(ents))
@@ -358,29 +343,30 @@ func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	l.printf(BEAT, "N%v <- N%v HBET (T:%v CI:%v)", r.me, m.From, m.Term, m.CommittedIndex)
 }
 
-// //
-// // persistence events.
-// //
-
-// func (l *Logger) restoreEnts(ents []Entry) {
-// 	r := l.r
-// 	l.printf(PERS, "N%v re (LN:%v)", r.me, len(ents))
-// 	// l.printEnts(PERS, r.me, ents)
-// }
-
-// func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
-// 	r := l.r
-// 	// be: backup entries.
-// 	l.printf(PERS, "N%v be (SI:%v) -> (SI:%v)", r.me, oldlastStabledIndex, lastStabledIndex)
-// }
-
 //
-// peer interaction events.
+// persistence events.
 //
 
-func (l *Logger) startRaft() {
+func (l *Logger) restore() {
 	r := l.r
-	l.printf(PEER, "N%v START (T:%v V:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.committed, r.log.applied)
+	l.printf(PEER, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+}
+
+func (l *Logger) persist() {
+	r := l.r
+	l.printf(PEER, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+}
+
+func (l *Logger) restoreEnts(ents []Entry) {
+	r := l.r
+	l.printf(PERS, "N%v rs (LN:%v)", r.me, len(ents))
+	l.printEnts(PERS, r.me, ents)
+}
+
+func (l *Logger) PersistEnts(oldlastStabledIndex, lastStabledIndex uint64) {
+	r := l.r
+	// be: backup entries.
+	l.printf(PERS, "N%v be (SI:%v) -> (SI:%v)", r.me, oldlastStabledIndex, lastStabledIndex)
 }
 
 // //

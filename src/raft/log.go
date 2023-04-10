@@ -91,6 +91,7 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 	}
 
 	if start > end {
+		DPrintf("[start=%v, end=%v)\n", start, end)
 		panic("Invalid [start, end) index pair")
 	}
 
@@ -100,19 +101,23 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 	return log.clone(log.entries[start:end]), nil
 }
 
-func (log *Log) truncateSuffix(index uint64) {
+func (log *Log) truncateSuffix(index uint64) bool {
 	if index <= log.firstIndex() || index > log.lastIndex() {
-		return
+		return false
 	}
 
 	index = log.toArrayIndex(index)
-	log.logger.discardEnts(log.entries[index:])
-	log.entries = log.entries[:index]
+	if len(log.entries[index:]) > 0 {
+		log.entries = log.entries[:index]
+		log.logger.discardEnts(log.entries[index:])
+		return true
+	}
+	return false
 }
 
 func (log *Log) append(entries []Entry) {
-	log.logger.appendEnts(entries)
 	log.entries = append(log.entries, entries...)
+	log.logger.appendEnts(entries)
 }
 
 func (log *Log) committedTo(index uint64) {

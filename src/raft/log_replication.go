@@ -71,6 +71,17 @@ func (rf *Raft) maybeCommittedTo(index uint64) {
 	}
 }
 
+func (rf *Raft) truncateLogSuffix(index uint64) {
+	if rf.log.truncateSuffix(index) {
+		rf.persist()
+	}
+}
+
+func (rf *Raft) appendLog(entries []Entry) {
+	rf.log.append(entries)
+	rf.persist()
+}
+
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -103,8 +114,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	for i, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
-			rf.log.truncateSuffix(entry.Index)
-			rf.log.append(args.Entries[i:])
+			rf.truncateLogSuffix(entry.Index)
+			rf.appendLog(args.Entries[i:])
 			break
 		}
 	}

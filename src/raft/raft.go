@@ -18,12 +18,10 @@ package raft
 //
 
 import (
-	//	"bytes"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	// "6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -85,7 +83,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.me = me
 
-	rf.logger.init(false, "log")
+	rf.logger = *makeLogger(false, "out")
 	rf.logger.r = rf
 
 	rf.applyCh = applyCh
@@ -94,13 +92,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log = makeLog()
 	rf.log.logger = &rf.logger
 
-	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
-	rf.resetTrackedIndexes()
-
 	rf.heartbeatTimeout = heartbeatTimeout
 	rf.resetHeartbeatTimer()
 
-	rf.becomeFollower(0, true)
+	rf.readPersist(rf.persister.ReadRaftState())
+	rf.logger.restore()
+
+	// update tracker indexes with the restored log entries.
+	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
+	rf.resetTrackedIndexes()
+
+	rf.becomeFollower(rf.term, true)
 
 	// initialize from state persisted before a crash
 	// rf.readPersist(persister.ReadRaftState())
@@ -134,7 +136,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	index := rf.log.lastIndex() + 1
 	entry := Entry{Index: index, Term: rf.term, Data: command}
-	rf.log.append([]Entry{entry})
+	rf.appendLog([]Entry{entry})
 
 	return int(index), int(rf.term), true
 }

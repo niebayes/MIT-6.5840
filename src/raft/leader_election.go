@@ -19,19 +19,35 @@ func (rf *Raft) resetElectionTimer() {
 	rf.lastElection = time.Now()
 }
 
+func (rf *Raft) updateTerm(term uint64) {
+	if rf.term != term {
+		rf.term = term
+		rf.persist()
+	}
+}
+
+func (rf *Raft) updateVotedTo(votedTo int) {
+	if rf.votedTo != votedTo {
+		rf.votedTo = votedTo
+		rf.persist()
+	}
+}
+
 func (rf *Raft) resetVote() {
 	rf.votedMe = make([]bool, len(rf.peers))
 	rf.votedMe[rf.me] = true
-	rf.votedTo = None
+	rf.updateVotedTo(None)
 }
 
 func (rf *Raft) becomeFollower(term uint64, forced bool) {
 	oldTerm := rf.term
 
 	if forced || term > rf.term {
-		rf.term = term
-		rf.logger.stateToFollower(oldTerm)
-		rf.state = Follower
+		rf.updateTerm(term)
+		if rf.state != Follower {
+			rf.state = Follower
+			rf.logger.stateToFollower(oldTerm)
+		}
 		rf.resetVote()
 	}
 	// reset election timer to not immediately start a new round of election to compete with the current leader.
@@ -39,10 +55,10 @@ func (rf *Raft) becomeFollower(term uint64, forced bool) {
 }
 
 func (rf *Raft) becomeCandidate() {
-	rf.term += 1
+	rf.updateTerm(rf.term + 1)
 	rf.logger.stateToCandidate()
 	rf.resetVote()
-	rf.votedTo = rf.me
+	rf.updateVotedTo(rf.me)
 	rf.state = Candidate
 }
 
@@ -118,11 +134,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	// `rf.voted == args.From` guarantees that a candidate won't vote to another candidate.
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
-		rf.votedTo = args.From
-		// reset election timer to not compete with the candidate.
-		rf.resetElectionTimer()
+		rf.updateVotedTo(args.From)
 		reply.VotedTo = args.From
 		rf.logger.voteTo(args.From)
+
+		// reset election timer to not compete with the candidate.
+		rf.resetElectionTimer()
+
 	} else {
 		lastLogIndex := rf.log.lastIndex()
 		lastLogTerm, _ := rf.log.term(lastLogIndex)
