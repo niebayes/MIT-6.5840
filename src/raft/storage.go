@@ -17,6 +17,8 @@ func (rf *Raft) persist() {
 	e := labgob.NewEncoder(w)
 	if e.Encode(rf.term) == nil && e.Encode(rf.votedTo) == nil && e.Encode(rf.log.entries) == nil && e.Encode(rf.log.snapshot.Index) == nil && e.Encode(rf.log.snapshot.Term) == nil {
 		raftstate := w.Bytes()
+		// warning: since the persister provides a very simple interface, there's no way to not persist
+		// raftstate and snapshot together while ensures they're in sync.
 		rf.persister.Save(raftstate, rf.log.snapshot.Data)
 
 		rf.logger.persist()
@@ -33,6 +35,8 @@ func (rf *Raft) readPersist(data []byte) {
 	if d.Decode(&rf.term) != nil || d.Decode(&rf.votedTo) != nil || d.Decode(&rf.log.entries) != nil || d.Decode(&rf.log.snapshot.Index) != nil || d.Decode(&rf.log.snapshot.Term) != nil {
 		panic("failed to decode some fields")
 	}
+
+	rf.log.compactedTo(Snapshot{Data: rf.persister.ReadSnapshot(), Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
 
 	rf.logger.restore()
 }

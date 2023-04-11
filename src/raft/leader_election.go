@@ -100,6 +100,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		return
 	}
 
+	// TODO: use the shared Message layer to filter out so that the logger is placed here rather than at the beginning.
+
 	if args.Term > rf.term {
 		rf.becomeFollower(args.Term)
 		defer rf.persist()

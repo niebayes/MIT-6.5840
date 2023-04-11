@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -12,10 +13,16 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	rf.logger.pullSnap(uint64(index))
+
+	if rf.log.hasPendingSnapshot {
+		return
+	}
+
 	snapshotIndex := uint64(index)
 	snapshotTerm, err := rf.log.term(snapshotIndex)
 	// FIXME: doubt the err checking is necessary.
-	if err != nil && snapshotIndex > rf.log.snapshot.Index {
+	if err == nil && snapshotIndex > rf.log.snapshot.Index {
 		rf.log.compactedTo(Snapshot{Data: snapshot, Index: snapshotIndex, Term: snapshotTerm})
 		rf.persist()
 	}
@@ -37,6 +44,8 @@ func (rf *Raft) sendInstallSnapshot(args *InstallSnapshotArgs) {
 func (rf *Raft) lagBehindSnapshot(to int) bool {
 	return rf.peerTrackers[to].nextIndex <= rf.log.firstIndex()
 }
+
+// TODO: figure out if snapshotting affects leader restriction checking and log consistency checking.
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
@@ -60,11 +69,21 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 	defer rf.resetElectionTimer()
 
-	if args.Snapshot.Index > rf.log.snapshot.Index {
+	if args.Snapshot.Index <= rf.log.snapshot.Index {
+		reply.Installed = true
+		return
+	}
+
+	if !rf.log.hasPendingSnapshot && args.Snapshot.Index > rf.log.snapshot.Index {
 		rf.log.compactedTo(args.Snapshot)
+		reply.Installed = true
 		if !termChanged {
-			rf.persist()
+			defer rf.persist()
 		}
+
+		rf.log.hasPendingSnapshot = true
+		rf.claimToBeApplied.Signal()
+		fmt.Printf("N%v signals\n", rf.me)
 	}
 }
 
@@ -87,11 +106,21 @@ func (rf *Raft) handleInstallSnapshotReply(args *InstallSnapshotArgs, reply *Ins
 	}
 
 	// we must ensure that the peer is in the same state as when sending the args.
-	if rf.term != args.Term || rf.state != Leader || rf.peerTrackers[reply.From].nextIndex <= args.Snapshot.Index {
+	if rf.term != args.Term || rf.state != Leader || rf.peerTrackers[reply.From].nextIndex > args.Snapshot.Index {
 		return
 	}
 
 	if reply.Installed {
-		rf.peerTrackers[reply.From].nextIndex = args.Snapshot.Index + 1
+		oldNext := rf.peerTrackers[reply.From].nextIndex
+		oldMatch := rf.peerTrackers[reply.From].matchIndex
+
+		rf.peerTrackers[reply.From].matchIndex = args.Snapshot.Index
+		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
+
+		newNext := rf.peerTrackers[reply.From].nextIndex
+		newMatch := rf.peerTrackers[reply.From].matchIndex
+		if newNext != oldNext || newMatch != oldMatch {
+			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
+		}
 	}
 }

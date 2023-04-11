@@ -1144,10 +1144,12 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if disconnect {
+			fmt.Printf("disconnect N%v\n", victim)
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 		if crash {
+			fmt.Printf("crash N%v\n", victim)
 			cfg.crash1(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
@@ -1168,17 +1170,22 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
-		if cfg.LogSize() >= MAXLOGSIZE {
-			cfg.t.Fatalf("Log size too large")
+		if maxLogSize := cfg.LogSize(); maxLogSize >= MAXLOGSIZE {
+			cfg.t.Fatalf("Log size too large. maxLogSize=%v", maxLogSize)
+		} else {
+			cfg.t.Logf("maxLogSize=%v", maxLogSize)
 		}
+
 		if disconnect {
 			// reconnect a follower, who maybe behind and
-			// needs to rceive a snapshot to catch up.
+			// needs to receive a snapshot to catch up.
+			fmt.Printf("reconnect N%v\n", victim)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
 		if crash {
+			fmt.Printf("recover N%v\n", victim)
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
@@ -1268,11 +1275,13 @@ func TestSnapshotInit2D(t *testing.T) {
 
 	// crash all
 	for i := 0; i < servers; i++ {
+		fmt.Printf("crash N%v\n", i)
 		cfg.crash1(i)
 	}
 
 	// revive all
 	for i := 0; i < servers; i++ {
+		fmt.Printf("recover N%v\n", i)
 		cfg.start1(i, cfg.applierSnap)
 		cfg.connect(i)
 	}
@@ -1282,11 +1291,13 @@ func TestSnapshotInit2D(t *testing.T) {
 
 	// crash all
 	for i := 0; i < servers; i++ {
+		fmt.Printf("crash N%v\n", i)
 		cfg.crash1(i)
 	}
 
 	// revive all
 	for i := 0; i < servers; i++ {
+		fmt.Printf("recover N%v\n", i)
 		cfg.start1(i, cfg.applierSnap)
 		cfg.connect(i)
 	}

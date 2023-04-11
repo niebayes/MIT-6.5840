@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -41,6 +42,8 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 		if i == rf.me {
 			continue
 		}
+
+		// FIXME: Shall I not send a pending snapshot?
 		if rf.lagBehindSnapshot(i) {
 			args := rf.makeInstallSnapshot(i)
 			rf.logger.sendISNP(i, args.Snapshot.Index, args.Snapshot.Term)
@@ -90,13 +93,16 @@ func (rf *Raft) maybeCommittedTo(index uint64) {
 	if index := min(index, rf.log.lastIndex()); index > rf.log.committed {
 		// TODO: add persistence for committed index and applied index.
 		rf.log.committedTo(index)
-		rf.hasNewCommittedEntries.Signal()
+		rf.claimToBeApplied.Signal()
+		fmt.Printf("N%v signals\n", rf.me)
 	}
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
+	// FIXME: Shall I reject entries if there's a pending snapshot?
 
 	if len(args.Entries) > 0 {
 		rf.logger.recvAENT(args)
@@ -162,7 +168,8 @@ func (rf *Raft) maybeCommitMatched(index uint64) {
 	for i := index; i > rf.log.committed; i-- {
 		if term, err := rf.log.term(i); err == nil && term == rf.term && rf.quorumMatched(i) {
 			rf.log.committedTo(i)
-			rf.hasNewCommittedEntries.Signal()
+			rf.claimToBeApplied.Signal()
+			fmt.Printf("N%v signals\n", rf.me)
 			break
 		}
 	}

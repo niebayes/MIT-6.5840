@@ -355,7 +355,7 @@ func (l *Logger) recvHBETRes(m *AppendEntriesReply) {
 
 func (l *Logger) restore() {
 	r := l.r
-	l.printf(PERS, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+	l.printf(PERS, "N%v rs (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied, r.log.snapshot.Index, r.log.snapshot.Term)
 	if printEnts {
 		l.printEnts(PERS, r.me, r.log.entries)
 	}
@@ -363,7 +363,7 @@ func (l *Logger) restore() {
 
 func (l *Logger) persist() {
 	r := l.r
-	l.printf(PERS, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied)
+	l.printf(PERS, "N%v sv (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)", r.me, r.term, r.votedTo, r.log.lastIndex(), r.log.committed, r.log.applied, r.log.snapshot.Index, r.log.snapshot.Term)
 	if printEnts {
 		l.printEnts(PERS, r.me, r.log.entries)
 	}
@@ -373,11 +373,9 @@ func (l *Logger) persist() {
 // snapshot events
 //
 
-func (l *Logger) compactedTo(snapshotIndex, snapshotTerm uint64) {
+func (l *Logger) compactedTo(lastLogIndex, lastLogTerm uint64) {
 	r := l.r
-	lastLogIndex := r.log.lastIndex()
-	lastLogTerm, _ := r.log.term(lastLogIndex)
-	l.printf(SNAP, "N%v cp (SI:%v ST:%v LI:%v LT:%v)", r.me, snapshotIndex, snapshotTerm, lastLogIndex, lastLogTerm)
+	l.printf(SNAP, "N%v cp (SI:%v ST:%v LI:%v LT:%v)", r.me, r.log.snapshot.Index, r.log.snapshot.Term, lastLogIndex, lastLogTerm)
 }
 
 func (l *Logger) sendISNP(to int, snapshotIndex, snapshotTerm uint64) {
@@ -393,4 +391,14 @@ func (l *Logger) recvISNP(m *InstallSnapshotArgs) {
 func (l *Logger) recvISNPRes(m *InstallSnapshotReply) {
 	r := l.r
 	l.printf(SNAP, "N%v <- N%v ISNP RES (IS:%v)", r.me, m.From, m.Installed)
+}
+
+func (l *Logger) pullSnap(snapshotIndex uint64) {
+	r := l.r
+	l.printf(SNAP, "N%v pull SNP (SI:%v)", r.me, snapshotIndex)
+}
+
+func (l *Logger) pushSnap(snapshotIndex, snapshotTerm uint64) {
+	r := l.r
+	l.printf(SNAP, "N%v push SNP (SI:%v ST:%v)", r.me, snapshotIndex, snapshotTerm)
 }

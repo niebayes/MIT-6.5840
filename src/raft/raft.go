@@ -62,8 +62,8 @@ type Raft struct {
 
 	peerTrackers []PeerTracker // keeps track of each peer's next index and match index.
 
-	applyCh                chan<- ApplyMsg
-	hasNewCommittedEntries sync.Cond
+	applyCh          chan<- ApplyMsg
+	claimToBeApplied sync.Cond
 
 	logger Logger
 }
@@ -89,7 +89,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.logger.r = rf
 
 	rf.applyCh = applyCh
-	rf.hasNewCommittedEntries = *sync.NewCond(&rf.mu)
+	rf.claimToBeApplied = *sync.NewCond(&rf.mu)
 
 	rf.log = makeLog()
 	rf.log.logger = &rf.logger
@@ -99,11 +99,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	if raftstate := rf.persister.ReadRaftState(); len(raftstate) > 0 {
 		rf.readPersist(raftstate)
-		rf.logger.restore()
 	} else {
 		rf.term = 0
 		rf.votedTo = None
 	}
+
+	rf.state = Follower
+	rf.resetElectionTimer()
 	rf.logger.stateToFollower(rf.term)
 
 	// update tracker indexes with the restored log entries.

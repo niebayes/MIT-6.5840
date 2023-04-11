@@ -1,6 +1,9 @@
 package raft
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var ErrOutOfBound = errors.New("index out of bound")
 
@@ -23,7 +26,8 @@ type Snapshot struct {
 //	  compacted           persisted log entries
 type Log struct {
 	// compacted log entries.
-	snapshot Snapshot
+	snapshot           Snapshot
+	hasPendingSnapshot bool
 
 	// persisted log entries.
 	entries []Entry
@@ -36,10 +40,11 @@ type Log struct {
 
 func makeLog() Log {
 	log := Log{
-		snapshot:  Snapshot{Data: nil, Index: 0, Term: 0},
-		entries:   make([]Entry, 1),
-		applied:   0,
-		committed: 0,
+		snapshot:           Snapshot{Data: nil, Index: 0, Term: 0},
+		hasPendingSnapshot: false,
+		entries:            make([]Entry, 1),
+		applied:            0,
+		committed:          0,
 	}
 
 	log.setDummy()
@@ -127,25 +132,32 @@ func (log *Log) append(entries []Entry) {
 }
 
 func (log *Log) committedTo(index uint64) {
-	oldCommitted := log.committed
-	log.committed = index
-	log.logger.updateCommitted(oldCommitted)
+	if index > log.committed {
+		oldCommitted := log.committed
+		log.committed = index
+		log.logger.updateCommitted(oldCommitted)
+	}
 }
 
 func (log *Log) newCommittedEntries() []Entry {
 	start := log.toArrayIndex(log.applied + 1)
 	end := log.toArrayIndex(log.committed + 1)
+	fmt.Printf("newCommittedEntries [start=%v, end=%v)\n", log.applied+1, log.committed+1)
 	if start >= end {
 		// note: len(nil slice) == 0.
+		fmt.Printf("newCommittedEntries [start=%v, end=%v)\n", start, end)
 		return nil
 	}
+	fmt.Printf("newCommittedEntries LN=%v\n", len(log.entries[start:end]))
 	return log.clone(log.entries[start:end])
 }
 
 func (log *Log) appliedTo(index uint64) {
-	oldApplied := log.applied
-	log.applied = index
-	log.logger.updateApplied(oldApplied)
+	if index > log.applied {
+		oldApplied := log.applied
+		log.applied = index
+		log.logger.updateApplied(oldApplied)
+	}
 }
 
 func (log *Log) compactedTo(snapshot Snapshot) {
@@ -160,10 +172,16 @@ func (log *Log) compactedTo(snapshot Snapshot) {
 	log.snapshot = snapshot
 	log.setDummy()
 
-	log.committed = max(log.committed, log.snapshot.Index)
-	log.applied = max(log.applied, log.snapshot.Index)
+	if log.snapshot.Index > log.committed {
+		log.committedTo(log.snapshot.Index)
+	}
+	if log.snapshot.Index > log.applied {
+		log.appliedTo(log.snapshot.Index)
+	}
 
-	log.logger.compactedTo(log.snapshot.Index, log.snapshot.Term)
+	lastLogIndex := log.lastIndex()
+	lastLogTerm, _ := log.term(lastLogIndex)
+	log.logger.compactedTo(lastLogIndex, lastLogTerm)
 }
 
 // FIXME: doubt the clone is necessary for working around races.
