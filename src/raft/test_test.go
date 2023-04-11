@@ -950,6 +950,25 @@ func TestFigure8Unreliable2C(t *testing.T) {
 	cfg.end()
 }
 
+// there're three concurrent clients.
+// each client calls `Start` on each server. Once a server says it's the current leader,
+// the client sends the command to the server and let the server to start replicate it.
+// the client would wait a while for the command to be committed.
+// if the command is committed in time, then the committed command will be stored on an array.
+// if the command is not committed in time, the client starts sending another random command
+// to the raft cluster.
+// each client would repeat the above procedures until it's notified to stop.
+// once all clients are stopped, the committed commands of each client are collected together.
+// these values are the total committed commands.
+// the test suite then trys to commit a final command.
+// the index of the final command is recorded as the last index.
+// the test suite then iterates all indexes from 1 to the last index.
+// for each index, it fetches the committed command at that index.
+// after all committed commands are collected, the test suite iterates each committed command
+// in the total committed commands.
+// if all goes well, each committed command in the total committed commands must appear at somewhere
+// in the truly committed commands.
+// when the clients are running, the servers may crash, disconnect, restart.
 func internalChurn(t *testing.T, unreliable bool) {
 
 	servers := 5

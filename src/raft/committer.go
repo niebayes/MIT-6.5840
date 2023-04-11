@@ -14,7 +14,6 @@ type ApplyMsg struct {
 	Command      interface{}
 	CommandIndex int
 
-	// For 2D:
 	SnapshotValid bool
 	Snapshot      []byte
 	SnapshotTerm  int
@@ -38,4 +37,12 @@ func (rf *Raft) committer() {
 			rf.hasNewCommittedEntries.Wait()
 		}
 	}
+	// warning: this unlock is necessary.
+	// assume the committer thread just awakes up from `Wait` and grabs the lock.
+	// if happens the raft peer is killed and hence the committer will go out of the loop.
+	// if there's no such a unlock, then the lock is held by a killed raft peer.
+	// It seems a restart will reuse the same lock. Therefore, all subsequent locking operations
+	// will block forever since a killed raft peer holds the lock.
+	// I don't know what is actually under the hood, but problem arises by not using this unlock.
+	rf.mu.Unlock()
 }

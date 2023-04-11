@@ -78,7 +78,7 @@ func (rf *Raft) findFirstConflict(index uint64) (uint64, uint64) {
 }
 
 func (rf *Raft) maybeCommittedTo(index uint64) {
-	// FIXME: I doubt this `min` is necessary.
+	// FIXME: doubt this `min` is necessary.
 	if index := min(index, rf.log.lastIndex()); index > rf.log.committed {
 		// TODO: add persistence for committed index and applied index.
 		rf.log.committedTo(index)
@@ -225,10 +225,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			}
 		}
 
-		// FIXME: I doubt the `min` is correct.
-		// ensure the next index is reduced.
+		// FIXME: figure out whether the next index can be advanced.
 		rf.peerTrackers[reply.From].nextIndex = newNextIndex
-		// rf.peerTrackers[reply.From].nextIndex = min(newNextIndex, rf.peerTrackers[reply.From].nextIndex-1)
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex

@@ -25,10 +25,11 @@ import (
 	"6.5840/labrpc"
 )
 
-const tickInterval = 10 * time.Millisecond
+const tickInterval = 50 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 const None = -1
 
+// TODO: change to string type.
 type PeerState int
 
 const (
@@ -39,17 +40,17 @@ const (
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+	mu        sync.Mutex
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 
-	state PeerState // peer state.
-	term  uint64    // current term.
+	state   PeerState
+	term    uint64
+	votedTo int
+	votedMe []bool // true if a peer has voted to me at the current election.
 
-	votedTo         int    // to which this peer voted.
-	votedMe         []bool // true if a peer has voted to me.
 	electionTimeout time.Duration
 	lastElection    time.Time
 
@@ -114,43 +115,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	return rf
 }
 
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
-// this function should return gracefully.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	isLeader := !rf.killed() && rf.state == Leader
-	if !isLeader {
-		return 0, 0, false
-	}
-
-	index := rf.log.lastIndex() + 1
-	entry := Entry{Index: index, Term: rf.term, Data: command}
-	rf.log.append([]Entry{entry})
-	rf.persist()
-
-	return int(index), int(rf.term), true
-}
-
-// return currentTerm and whether this server
-// believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return int(rf.term), rf.state == Leader
-}
-
 func (rf *Raft) ticker() {
 	for !rf.killed() {
 		rf.mu.Lock()
@@ -183,6 +147,45 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 		time.Sleep(tickInterval)
 	}
+}
+
+// the service using Raft (e.g. a k/v server) wants to start
+// agreement on the next command to be appended to Raft's log. if this
+// server isn't the leader, returns false. otherwise start the
+// agreement and return immediately. there is no guarantee that this
+// command will ever be committed to the Raft log, since the leader
+// may fail or lose an election. even if the Raft instance has been killed,
+// this function should return gracefully.
+//
+// the first return value is the index that the command will appear at
+// if it's ever committed. the second return value is the current
+// term. the third return value is true if this server believes it is
+// the leader.
+func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// FIXME: doubt checking of `killed` is necessary.
+	isLeader := !rf.killed() && rf.state == Leader
+	if !isLeader {
+		return 0, 0, false
+	}
+
+	index := rf.log.lastIndex() + 1
+	entry := Entry{Index: index, Term: rf.term, Data: command}
+	rf.log.append([]Entry{entry})
+	rf.persist()
+
+	return int(index), int(rf.term), true
+}
+
+// return currentTerm and whether this server
+// believes it is the leader.
+func (rf *Raft) GetState() (int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// FIXME: doubt checking of `killed` is necessary.
+	return int(rf.term), !rf.killed() && rf.state == Leader
 }
 
 func (rf *Raft) Kill() {

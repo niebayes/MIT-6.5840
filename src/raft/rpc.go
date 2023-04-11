@@ -63,3 +63,6 @@ type InstallSnapshotReply struct {
 	ConflictTerm       uint64
 	FirstConflictIndex uint64
 }
+
+// TODO: add a RPC handler shared by all RPCs which does checking args.Term, reply.Term, and becomeFollower, etc. stuff.
+// TODO: add a Message struct to cover all RPCs.

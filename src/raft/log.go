@@ -90,8 +90,8 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 		return make([]Entry, 0), nil
 	}
 
+	// TODO: remove the panic when stable.
 	if start > end {
-		DPrintf("[start=%v, end=%v)\n", start, end)
 		panic("Invalid [start, end) index pair")
 	}
 
@@ -130,7 +130,8 @@ func (log *Log) newCommittedEntries() []Entry {
 	start := log.toArrayIndex(log.applied + 1)
 	end := log.toArrayIndex(log.committed + 1)
 	if start >= end {
-		return make([]Entry, 0)
+		// note: len(nil slice) == 0.
+		return nil
 	}
 	return log.clone(log.entries[start:end])
 }
