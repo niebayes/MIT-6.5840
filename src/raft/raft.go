@@ -25,7 +25,7 @@ import (
 	"6.5840/labrpc"
 )
 
-const tickInterval = 50 * time.Millisecond
+const tickInterval = 10 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 const None = -1
 
@@ -163,7 +163,6 @@ func (rf *Raft) ticker() {
 				rf.logger.elecTimeout()
 				rf.becomeCandidate()
 				rf.broadcastRequestVote()
-				rf.resetElectionTimer()
 			}
 
 		case Leader:

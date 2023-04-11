@@ -110,6 +110,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Term = rf.term
 		defer rf.persist()
 	}
+	defer rf.resetElectionTimer()
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {
@@ -163,9 +164,17 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.recvAENTRes(reply)
+	if len(args.Entries) > 0 {
+		rf.logger.recvAENTRes(reply)
+	} else {
+		rf.logger.recvHBETRes(reply)
+	}
 
 	rf.peerTrackers[reply.From].lastAck = time.Now()
+
+	if reply.Term < rf.term {
+		return
+	}
 
 	if reply.Term > rf.term {
 		rf.becomeFollower(reply.Term)
@@ -218,7 +227,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 
 		// FIXME: I doubt the `min` is correct.
 		// ensure the next index is reduced.
-		rf.peerTrackers[reply.From].nextIndex = min(newNextIndex, rf.peerTrackers[reply.From].nextIndex-1)
+		rf.peerTrackers[reply.From].nextIndex = newNextIndex
+		// rf.peerTrackers[reply.From].nextIndex = min(newNextIndex, rf.peerTrackers[reply.From].nextIndex-1)
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex

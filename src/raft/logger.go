@@ -11,7 +11,7 @@ import (
 // true to turn on debugging/logging.
 const debug = true
 const LOGTOFILE = false
-const printEnts = true
+const printEnts = false
 
 func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
 	if printEnts {
@@ -342,6 +342,11 @@ func (l *Logger) sendBeat(prevLogIndex, prevLogTerm uint64, to int) {
 func (l *Logger) recvHBET(m *AppendEntriesArgs) {
 	r := l.r
 	l.printf(BEAT, "N%v <- N%v HBET (T:%v CI:%v)", r.me, m.From, m.Term, m.CommittedIndex)
+}
+
+func (l *Logger) recvHBETRes(m *AppendEntriesReply) {
+	r := l.r
+	l.printf(LRPE, "N%v <- N%v HBET RES (T:%v E:%v CT:%v FCI:%v LI:%v)", r.me, m.From, m.Term, errMap[m.Err], m.ConflictTerm, m.FirstConflictIndex, m.LastLogIndex)
 }
 
 //
