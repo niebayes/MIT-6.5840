@@ -52,7 +52,6 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 			args := rf.makeAppendEntriesArgs(i)
 
 			if len(args.Entries) > 0 {
-				// FIXME: figure out why this would log twice for a peer?
 				rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, i)
 			} else {
 				rf.logger.sendBeat(args.PrevLogIndex, args.PrevLogTerm, i)
@@ -88,8 +87,7 @@ func (rf *Raft) findFirstConflict(index uint64) (uint64, uint64) {
 }
 
 func (rf *Raft) maybeCommittedTo(index uint64) {
-	// FIXME: doubt this `min` is necessary.
-	if index := min(index, rf.log.lastIndex()); index > rf.log.committed {
+	if index > rf.log.committed {
 		// TODO: add persistence for committed index and applied index.
 		rf.log.committedTo(index)
 		rf.claimToBeApplied.Signal()

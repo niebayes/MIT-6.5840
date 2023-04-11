@@ -101,11 +101,6 @@ func (log *Log) slice(start, end uint64) ([]Entry, error) {
 		return make([]Entry, 0), nil
 	}
 
-	// TODO: remove the panic when stable.
-	if start > end {
-		panic("Invalid [start, end) index pair")
-	}
-
 	start = log.toArrayIndex(start)
 	end = log.toArrayIndex(end)
 
@@ -169,12 +164,8 @@ func (log *Log) compactedTo(snapshot Snapshot) {
 	log.snapshot = snapshot
 	log.setDummy()
 
-	if log.snapshot.Index > log.committed {
-		log.committedTo(log.snapshot.Index)
-	}
-	if log.snapshot.Index > log.applied {
-		log.appliedTo(log.snapshot.Index)
-	}
+	log.committedTo(log.snapshot.Index)
+	log.appliedTo(log.snapshot.Index)
 
 	lastLogIndex := log.lastIndex()
 	lastLogTerm, _ := log.term(lastLogIndex)
