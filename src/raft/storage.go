@@ -15,9 +15,9 @@ import (
 func (rf *Raft) persist() {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
-	if e.Encode(rf.term) == nil && e.Encode(rf.votedTo) == nil && e.Encode(rf.log.entries) == nil && e.Encode(rf.log.committed) == nil && e.Encode(rf.log.applied) == nil {
+	if e.Encode(rf.term) == nil && e.Encode(rf.votedTo) == nil && e.Encode(rf.log.entries) == nil && e.Encode(rf.log.snapshot.Index) == nil && e.Encode(rf.log.snapshot.Term) == nil {
 		raftstate := w.Bytes()
-		rf.persister.Save(raftstate, nil)
+		rf.persister.Save(raftstate, rf.log.snapshot.Data)
 
 		rf.logger.persist()
 
@@ -30,7 +30,7 @@ func (rf *Raft) persist() {
 func (rf *Raft) readPersist(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
-	if d.Decode(&rf.term) != nil || d.Decode(&rf.votedTo) != nil || d.Decode(&rf.log.entries) != nil || d.Decode(&rf.log.committed) != nil || d.Decode(&rf.log.applied) != nil {
+	if d.Decode(&rf.term) != nil || d.Decode(&rf.votedTo) != nil || d.Decode(&rf.log.entries) != nil || d.Decode(&rf.log.snapshot.Index) != nil || d.Decode(&rf.log.snapshot.Term) != nil {
 		panic("failed to decode some fields")
 	}
 

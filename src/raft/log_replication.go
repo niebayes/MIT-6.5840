@@ -38,7 +38,15 @@ func (rf *Raft) hasNewEntries(to int) bool {
 
 func (rf *Raft) broadcastAppendEntries(forced bool) {
 	for i := range rf.peers {
-		if i != rf.me && (forced || rf.hasNewEntries(i)) {
+		if i == rf.me {
+			continue
+		}
+		if rf.lagBehindSnapshot(i) {
+			args := rf.makeInstallSnapshot(i)
+			rf.logger.sendISNP(i, args.Snapshot.Index, args.Snapshot.Term)
+			go rf.sendInstallSnapshot(args)
+
+		} else if forced || rf.hasNewEntries(i) {
 			args := rf.makeAppendEntriesArgs(i)
 
 			if len(args.Entries) > 0 {

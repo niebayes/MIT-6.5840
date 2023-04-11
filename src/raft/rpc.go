@@ -45,23 +45,17 @@ type AppendEntriesReply struct {
 }
 
 type InstallSnapshotArgs struct {
-	From               int
-	To                 int
-	Term               uint64
-	Err                Err
-	LastLogIndex       uint64
-	ConflictTerm       uint64
-	FirstConflictIndex uint64
+	From     int
+	To       int
+	Term     uint64
+	Snapshot Snapshot
 }
 
 type InstallSnapshotReply struct {
-	From               int
-	To                 int
-	Term               uint64
-	Err                Err
-	LastLogIndex       uint64
-	ConflictTerm       uint64
-	FirstConflictIndex uint64
+	From      int
+	To        int
+	Term      uint64
+	Installed bool
 }
 
 // TODO: add a RPC handler shared by all RPCs which does checking args.Term, reply.Term, and becomeFollower, etc. stuff.

@@ -16,8 +16,8 @@ type ApplyMsg struct {
 
 	SnapshotValid bool
 	Snapshot      []byte
-	SnapshotTerm  int
 	SnapshotIndex int
+	SnapshotTerm  int
 }
 
 func (rf *Raft) committer() {

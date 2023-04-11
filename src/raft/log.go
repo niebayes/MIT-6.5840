@@ -10,6 +10,12 @@ type Entry struct {
 	Data  interface{}
 }
 
+type Snapshot struct {
+	Data  []byte
+	Index uint64
+	Term  uint64
+}
+
 // Log manages log entries, its struct look like:
 //
 //	     snapshot/first.....applied....committed.....last
@@ -17,8 +23,7 @@ type Entry struct {
 //	  compacted           persisted log entries
 type Log struct {
 	// compacted log entries.
-	snapshotIndex uint64 // the log index of the last compacted log entry.
-	snapshotTerm  uint64 // the term of the last compacted log entry.
+	snapshot Snapshot
 
 	// persisted log entries.
 	entries []Entry
@@ -31,18 +36,19 @@ type Log struct {
 
 func makeLog() Log {
 	log := Log{
-		snapshotIndex: 0,
-		snapshotTerm:  0,
-		entries:       make([]Entry, 0),
-		applied:       0,
-		committed:     0,
+		snapshot:  Snapshot{Data: nil, Index: 0, Term: 0},
+		entries:   make([]Entry, 1),
+		applied:   0,
+		committed: 0,
 	}
 
-	// append a dummy log entry to simplify log operations.
-	// the index and term of the dummy log entry are always synced with the snapshotIndex and snapshotTerm.
-	log.entries = append(log.entries, Entry{Index: log.snapshotIndex, Term: log.snapshotTerm})
-
+	log.setDummy()
 	return log
+}
+
+func (log *Log) setDummy() {
+	log.entries[0].Index = log.snapshot.Index
+	log.entries[0].Term = log.snapshot.Term
 }
 
 func (log *Log) toArrayIndex(index uint64) uint64 {
@@ -142,7 +148,27 @@ func (log *Log) appliedTo(index uint64) {
 	log.logger.updateApplied(oldApplied)
 }
 
-func (log *Log) compactedTo(index, term uint64) {
-	log.snapshotIndex = index
-	log.snapshotTerm = term
+func (log *Log) compactedTo(snapshot Snapshot) {
+	suffix := make([]Entry, 0)
+	suffixStart := snapshot.Index + 1
+	if suffixStart <= log.lastIndex() {
+		suffixStart = log.toArrayIndex(suffixStart)
+		suffix = log.entries[suffixStart:]
+	}
+
+	log.entries = append(make([]Entry, 1), suffix...)
+	log.snapshot = snapshot
+	log.setDummy()
+
+	log.committed = max(log.committed, log.snapshot.Index)
+	log.applied = max(log.applied, log.snapshot.Index)
+
+	log.logger.compactedTo(log.snapshot.Index, log.snapshot.Term)
+}
+
+// FIXME: doubt the clone is necessary for working around races.
+func (log *Log) clonedSnapshot() Snapshot {
+	cloned := Snapshot{Data: make([]byte, len(log.snapshot.Data)), Index: log.snapshot.Index, Term: log.snapshot.Term}
+	copy(cloned.Data, log.snapshot.Data)
+	return cloned
 }

@@ -369,23 +369,28 @@ func (l *Logger) persist() {
 	}
 }
 
-// //
-// // snapshot events
-// //
+//
+// snapshot events
+//
 
-// func (l *Logger) sendSnap(to uint64, snap *pb.Snapshot) {
-// 	r := l.r
-// 	l.printf(SNAP, "N%v s-> N%v (SI:%v ST:%v)", r.me, to, snap.Metadata.Index, snap.Metadata.term)
-// }
+func (l *Logger) compactedTo(snapshotIndex, snapshotTerm uint64) {
+	r := l.r
+	lastLogIndex := r.log.lastIndex()
+	lastLogTerm, _ := r.log.term(lastLogIndex)
+	l.printf(SNAP, "N%v cp (SI:%v ST:%v LI:%v LT:%v)", r.me, snapshotIndex, snapshotTerm, lastLogIndex, lastLogTerm)
+}
 
-// func (l *Logger) recvSNAP(m pb.Message) {
-// 	r := l.r
-// 	l.printf(SNAP, "N%v <- N%v SNAP (SI:%v ST:%v)", r.me, m.From, m.Snapshot.Metadata.Index, m.Snapshot.Metadata.term)
-// }
+func (l *Logger) sendISNP(to int, snapshotIndex, snapshotTerm uint64) {
+	r := l.r
+	l.printf(SNAP, "N%v s-> N%v (SI:%v ST:%v)", r.me, to, snapshotIndex, snapshotTerm)
+}
 
-// func (l *Logger) entsAfterSnapshot() {
-// 	r := l.r
-// 	// snapshot entries.
-// 	l.printf(SNAP, "N%v ^se (LN:%v)", r.me, len(r.RaftLog.entries))
-// 	l.printEnts(SNAP, r.me, r.RaftLog.entries)
-// }
+func (l *Logger) recvISNP(m *InstallSnapshotArgs) {
+	r := l.r
+	l.printf(SNAP, "N%v <- N%v ISNP (SI:%v ST:%v)", r.me, m.From, m.Snapshot.Index, m.Snapshot.Term)
+}
+
+func (l *Logger) recvISNPRes(m *InstallSnapshotReply) {
+	r := l.r
+	l.printf(SNAP, "N%v <- N%v ISNP RES (IS:%v)", r.me, m.From, m.Installed)
+}

@@ -25,9 +25,10 @@ import (
 	"6.5840/labrpc"
 )
 
+// warning: the ticking granularity may acquire to be increased if there're more raft peers.
 const tickInterval = 50 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
-const None = -1
+const None = -1 // to indicate a peer has not voted to anyone.
 
 // TODO: change to string type.
 type PeerState int
@@ -165,7 +166,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// FIXME: doubt checking of `killed` is necessary.
+	// FIXME: doubt the checking of `killed` is necessary.
 	isLeader := !rf.killed() && rf.state == Leader
 	if !isLeader {
 		return 0, 0, false
@@ -184,7 +185,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) GetState() (int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// FIXME: doubt checking of `killed` is necessary.
+	// FIXME: doubt the checking of `killed` is necessary.
 	return int(rf.term), !rf.killed() && rf.state == Leader
 }
 
