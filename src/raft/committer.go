@@ -1,7 +1,5 @@
 package raft
 
-import "fmt"
-
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make(). set
@@ -26,7 +24,6 @@ func (rf *Raft) committer() {
 	rf.mu.Lock()
 	for !rf.killed() {
 		if rf.log.hasPendingSnapshot {
-			fmt.Printf("N%v has pending snap\n", rf.me)
 			snapshot := rf.log.clonedSnapshot()
 			rf.mu.Unlock()
 
@@ -37,7 +34,6 @@ func (rf *Raft) committer() {
 			rf.logger.pushSnap(snapshot.Index, snapshot.Term)
 
 		} else if newCommittedEntries := rf.log.newCommittedEntries(); len(newCommittedEntries) > 0 {
-			fmt.Printf("N%v has new committed entries. LN=%v FI=%v LI=%v\n", rf.me, len(newCommittedEntries), newCommittedEntries[0].Index, newCommittedEntries[len(newCommittedEntries)-1].Index)
 			rf.mu.Unlock()
 
 			for _, entry := range newCommittedEntries {
@@ -45,14 +41,10 @@ func (rf *Raft) committer() {
 			}
 
 			rf.mu.Lock()
-			// TODO: rewrite committedTo and appliedTo with if.
-			applied := max(rf.log.applied, newCommittedEntries[len(newCommittedEntries)-1].Index)
-			rf.log.appliedTo(applied)
+			rf.log.appliedTo(newCommittedEntries[len(newCommittedEntries)-1].Index)
 
 		} else {
-			fmt.Printf("N%v waits\n", rf.me)
 			rf.claimToBeApplied.Wait()
-			fmt.Printf("N%v awakes\n", rf.me)
 		}
 	}
 	// warning: this unlock is necessary.

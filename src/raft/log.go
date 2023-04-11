@@ -2,7 +2,6 @@ package raft
 
 import (
 	"errors"
-	"fmt"
 )
 
 var ErrOutOfBound = errors.New("index out of bound")
@@ -57,6 +56,7 @@ func (log *Log) setDummy() {
 }
 
 func (log *Log) toArrayIndex(index uint64) uint64 {
+	// warning: be careful of integer underflow. (No way to occur in my implementation)
 	return index - log.firstIndex()
 }
 
@@ -142,13 +142,10 @@ func (log *Log) committedTo(index uint64) {
 func (log *Log) newCommittedEntries() []Entry {
 	start := log.toArrayIndex(log.applied + 1)
 	end := log.toArrayIndex(log.committed + 1)
-	fmt.Printf("newCommittedEntries [start=%v, end=%v)\n", log.applied+1, log.committed+1)
 	if start >= end {
 		// note: len(nil slice) == 0.
-		fmt.Printf("newCommittedEntries [start=%v, end=%v)\n", start, end)
 		return nil
 	}
-	fmt.Printf("newCommittedEntries LN=%v\n", len(log.entries[start:end]))
 	return log.clone(log.entries[start:end])
 }
 

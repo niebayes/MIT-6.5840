@@ -58,27 +58,21 @@ func TestReElection2A(t *testing.T) {
 	cfg.begin("Test (2A): election after network failure")
 
 	leader1 := cfg.checkOneLeader()
-	fmt.Printf("leader1=%v\n", leader1)
 
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
-	fmt.Printf("disconnect leader1=%v\n", leader1)
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
 	cfg.connect(leader1)
-	fmt.Printf("connect leader1=%v\n", leader1)
 	leader2 := cfg.checkOneLeader()
-	fmt.Printf("leader2=%v\n", leader2)
 
 	// if there's no quorum, no new leader should
 	// be elected.
 	cfg.disconnect(leader2)
-	fmt.Printf("disconnect leader2=%v\n", leader2)
 	cfg.disconnect((leader2 + 1) % servers)
-	fmt.Printf("disconnect server=%v\n", (leader2+1)%servers)
 	time.Sleep(2 * RaftElectionTimeout)
 
 	// check that the one connected server
@@ -87,12 +81,10 @@ func TestReElection2A(t *testing.T) {
 
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
-	fmt.Printf("connect server=%v\n", (leader2+1)%servers)
 	cfg.checkOneLeader()
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
-	fmt.Printf("connect leader2=%v\n", leader2)
 	cfg.checkOneLeader()
 
 	cfg.end()
@@ -1144,12 +1136,10 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if disconnect {
-			fmt.Printf("disconnect N%v\n", victim)
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 		if crash {
-			fmt.Printf("crash N%v\n", victim)
 			cfg.crash1(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
@@ -1172,20 +1162,16 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 		if maxLogSize := cfg.LogSize(); maxLogSize >= MAXLOGSIZE {
 			cfg.t.Fatalf("Log size too large. maxLogSize=%v", maxLogSize)
-		} else {
-			cfg.t.Logf("maxLogSize=%v", maxLogSize)
 		}
 
 		if disconnect {
 			// reconnect a follower, who maybe behind and
 			// needs to receive a snapshot to catch up.
-			fmt.Printf("reconnect N%v\n", victim)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
 		if crash {
-			fmt.Printf("recover N%v\n", victim)
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
@@ -1275,13 +1261,11 @@ func TestSnapshotInit2D(t *testing.T) {
 
 	// crash all
 	for i := 0; i < servers; i++ {
-		fmt.Printf("crash N%v\n", i)
 		cfg.crash1(i)
 	}
 
 	// revive all
 	for i := 0; i < servers; i++ {
-		fmt.Printf("recover N%v\n", i)
 		cfg.start1(i, cfg.applierSnap)
 		cfg.connect(i)
 	}
@@ -1291,13 +1275,11 @@ func TestSnapshotInit2D(t *testing.T) {
 
 	// crash all
 	for i := 0; i < servers; i++ {
-		fmt.Printf("crash N%v\n", i)
 		cfg.crash1(i)
 	}
 
 	// revive all
 	for i := 0; i < servers; i++ {
-		fmt.Printf("recover N%v\n", i)
 		cfg.start1(i, cfg.applierSnap)
 		cfg.connect(i)
 	}

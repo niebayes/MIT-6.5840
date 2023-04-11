@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -83,7 +82,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 		rf.log.hasPendingSnapshot = true
 		rf.claimToBeApplied.Signal()
-		fmt.Printf("N%v signals\n", rf.me)
 	}
 }
 

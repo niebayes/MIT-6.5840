@@ -97,8 +97,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.heartbeatTimeout = heartbeatTimeout
 	rf.resetHeartbeatTimer()
 
-	if raftstate := rf.persister.ReadRaftState(); len(raftstate) > 0 {
-		rf.readPersist(raftstate)
+	if rf.persister.RaftStateSize() > 0 || rf.persister.SnapshotSize() > 0 {
+		rf.readPersist(rf.persister.ReadRaftState())
 	} else {
 		rf.term = 0
 		rf.votedTo = None

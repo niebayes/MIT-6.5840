@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -94,7 +93,6 @@ func (rf *Raft) maybeCommittedTo(index uint64) {
 		// TODO: add persistence for committed index and applied index.
 		rf.log.committedTo(index)
 		rf.claimToBeApplied.Signal()
-		fmt.Printf("N%v signals\n", rf.me)
 	}
 }
 
@@ -169,7 +167,6 @@ func (rf *Raft) maybeCommitMatched(index uint64) {
 		if term, err := rf.log.term(i); err == nil && term == rf.term && rf.quorumMatched(i) {
 			rf.log.committedTo(i)
 			rf.claimToBeApplied.Signal()
-			fmt.Printf("N%v signals\n", rf.me)
 			break
 		}
 	}

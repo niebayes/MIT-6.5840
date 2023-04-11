@@ -36,6 +36,8 @@ func (rf *Raft) readPersist(data []byte) {
 		panic("failed to decode some fields")
 	}
 
+	// since the server layer entrusts the raft layer to persist snapshot, the raft layer must also
+	// read the persisted snapshot as well.
 	rf.log.compactedTo(Snapshot{Data: rf.persister.ReadSnapshot(), Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
 
 	rf.logger.restore()

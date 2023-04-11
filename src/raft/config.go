@@ -203,7 +203,6 @@ func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
 		cfg.logs[i][j] = xlog[j]
 	}
 	cfg.lastApplied[i] = lastIncludedIndex
-	fmt.Printf("N%v ingests snap. SI=%v\n", i, index)
 	return ""
 }
 
@@ -223,7 +222,6 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 		if m.SnapshotValid {
 			cfg.mu.Lock()
 			err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
-			fmt.Printf("N%v snapshots at index=%v\n", i, m.SnapshotIndex)
 			cfg.mu.Unlock()
 		} else if m.CommandValid {
 			if m.CommandIndex != cfg.lastApplied[i]+1 {
@@ -313,8 +311,6 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	} else {
 		cfg.saved[i] = MakePersister()
 	}
-
-	fmt.Printf("N%v starts. AI=%v\n", i, cfg.lastApplied[i])
 
 	cfg.mu.Unlock()
 
