@@ -156,14 +156,15 @@ func (rf *Raft) quorumMatched(index uint64) bool {
 	return 2*matched > len(rf.peers)
 }
 
-func (rf *Raft) maybeCommitMatched(index uint64) {
+func (rf *Raft) maybeCommitMatched(index uint64) bool {
 	for i := index; i > rf.log.committed; i-- {
 		if term, err := rf.log.term(i); err == nil && term == rf.term && rf.quorumMatched(i) {
 			rf.log.committedTo(i)
 			rf.claimToBeApplied.Signal()
-			break
+			return true
 		}
 	}
+	return false
 }
 
 func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -202,7 +203,9 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
 		}
 
-		rf.maybeCommitMatched(rf.peerTrackers[reply.From].matchIndex)
+		if rf.maybeCommitMatched(rf.peerTrackers[reply.From].matchIndex) {
+			rf.broadcastAppendEntries(true)
+		}
 
 	case IndexNotMatched:
 		rf.peerTrackers[reply.From].nextIndex = reply.LastLogIndex + 1

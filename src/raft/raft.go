@@ -179,6 +179,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.log.append([]Entry{entry})
 	rf.persist()
 
+	rf.broadcastAppendEntries(true)
+
 	return int(index), int(rf.term), true
 }
 

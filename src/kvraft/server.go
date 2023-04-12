@@ -24,6 +24,8 @@ type KVServer struct {
 
 	// the maximum op id among all applied ops of each clerk.
 	maxAppliedOpIdOfClerk map[int64]int
+
+	notifierOfOp map[int64]map[int]chan struct{}
 }
 
 // the k/v server should store snapshots through the underlying Raft
@@ -53,6 +55,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		kv.maxAppliedOpIdOfClerk = make(map[int64]int)
 	}
 
+	kv.notifierOfOp = make(map[int64]map[int]chan struct{})
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 

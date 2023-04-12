@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const pollRaftInterval = 100 * time.Millisecond
+const pollRaftInterval = 25 * time.Millisecond
 const maxWaitTime = 1000 * time.Millisecond
 
 func (kv *KVServer) executor() {
