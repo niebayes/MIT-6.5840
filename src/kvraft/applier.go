@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-const pollRaftInterval = 25 * time.Millisecond
-const maxWaitTime = 1000 * time.Millisecond
+const maxWaitTime = 500 * time.Millisecond
 
 func (kv *KVServer) executor() {
 	for m := range kv.applyCh {
@@ -38,6 +37,8 @@ func (kv *KVServer) maybeApplyClientOp(op *Op, index int) {
 		kv.applyClientOp(op)
 		kv.maxAppliedOpIdOfClerk[op.ClerkId] = op.OpId
 
+		kv.notify(op)
+
 		println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, index)
 	}
 }
@@ -59,33 +60,40 @@ func (kv *KVServer) applyClientOp(op *Op) {
 	}
 }
 
-func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (bool, string) {
-	var value string = ""
-	startTime := time.Now()
-
-	for !kv.killed() && time.Since(startTime) < maxWaitTime {
-		kv.mu.Lock()
-
-		if kv.isApplied(op) {
-			value = kv.db[op.Key]
-
-			// only the leader is eligible to reply Get.
-			if op.OpType == "Get" && !kv.isLeader() {
-				kv.mu.Unlock()
-				break
-			}
-
-			kv.mu.Unlock()
-			return true, value
-		}
-
-		kv.mu.Unlock()
-		time.Sleep(pollRaftInterval)
-	}
-	return false, value
-}
-
 func (kv *KVServer) isApplied(op *Op) bool {
 	maxApplyOpId, exist := kv.maxAppliedOpIdOfClerk[op.ClerkId]
 	return exist && maxApplyOpId >= op.OpId
+}
+
+func (kv *KVServer) makeAlarm(op *Op) {
+	go func() {
+		<-time.After(maxWaitTime)
+		kv.mu.Lock()
+		defer kv.mu.Unlock()
+		kv.notify(op)
+	}()
+}
+
+func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	if !kv.isApplied(op) {
+		if !kv.propose(op) {
+			return ErrWrongLeader, ""
+		}
+
+		notifier := kv.getNotifier(op, true)
+		kv.makeAlarm(op)
+		notifier.done.Wait()
+	}
+
+	if kv.isApplied(op) {
+		value := ""
+		if op.OpType == "Get" {
+			value = kv.db[op.Key]
+		}
+		return OK, value
+	}
+	return ErrNotApplied, ""
 }

@@ -25,7 +25,8 @@ type KVServer struct {
 	// the maximum op id among all applied ops of each clerk.
 	maxAppliedOpIdOfClerk map[int64]int
 
-	notifierOfOp map[int64]map[int]chan struct{}
+	// notifer of each clerk.
+	notifierOfClerk map[int64]*Notifier
 }
 
 // the k/v server should store snapshots through the underlying Raft
@@ -55,8 +56,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		kv.maxAppliedOpIdOfClerk = make(map[int64]int)
 	}
 
-	kv.notifierOfOp = make(map[int64]map[int]chan struct{})
+	kv.notifierOfClerk = map[int64]*Notifier{}
 	kv.applyCh = make(chan raft.ApplyMsg)
+
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// start the executor thread.
@@ -72,28 +74,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 
 	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: "Get", Key: args.Key}
-
-	kv.mu.Lock()
-	if !kv.isApplied(op) {
-		if !kv.propose(op) {
-			kv.mu.Unlock()
-			println("S%v is not leader (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
-			reply.Err = ErrWrongLeader
-			return
-		}
-	}
-	kv.mu.Unlock()
-
-	println("S%v waits Get applied (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
-	if applied, value := kv.waitUntilAppliedOrTimeout(op); applied {
-		reply.Err = OK
-		reply.Value = value
-
-		println("S%v replies Get (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
-
-	} else {
-		reply.Err = ErrNotApplied
-	}
+	reply.Err, reply.Value = kv.waitUntilAppliedOrTimeout(op)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
@@ -101,27 +82,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 
 	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: args.OpType, Key: args.Key, Value: args.Value}
-
-	kv.mu.Lock()
-	if !kv.isApplied(op) {
-		if !kv.propose(op) {
-			kv.mu.Unlock()
-			println("S%v is not leader (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
-			reply.Err = ErrWrongLeader
-			return
-		}
-	}
-	kv.mu.Unlock()
-
-	println("S%v waits PutAppend (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
-	if applied, _ := kv.waitUntilAppliedOrTimeout(op); applied {
-		reply.Err = OK
-
-		println("S%v replies PutAppend (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
-
-	} else {
-		reply.Err = ErrNotApplied
-	}
+	reply.Err, _ = kv.waitUntilAppliedOrTimeout(op)
 }
 
 func (kv *KVServer) Kill() {

@@ -18,6 +18,18 @@ const electionTimeout = 1 * time.Second
 
 const linearizabilityCheckTimeout = 1 * time.Second
 
+func TestMy(t *testing.T) {
+	mu := sync.Mutex{}
+	cond := sync.NewCond(&mu)
+	mu.Lock()
+	defer mu.Unlock()
+	go func() {
+		<-time.After(1 * time.Second)
+		cond.Signal()
+	}()
+	cond.Wait()
+}
+
 type OpLog struct {
 	operations []porcupine.Operation
 	sync.Mutex
