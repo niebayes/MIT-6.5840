@@ -15,16 +15,17 @@ func (kv *KVServer) executor() {
 		}
 
 		kv.mu.Lock()
+
 		if m.SnapshotValid {
 			kv.ingestSnapshot(m.Snapshot, m.SnapshotIndex, m.SnapshotTerm)
 
 		} else {
-			op := m.Command.(Op)
-			if kv.isNoOp(&op) {
+			op := m.Command.(*Op)
+			if kv.isNoOp(op) {
 				// skip no-ops.
 
 			} else {
-				kv.maybeApplyClientOp(&op, m.CommandIndex)
+				kv.maybeApplyClientOp(op, m.CommandIndex)
 			}
 		}
 
@@ -62,27 +63,29 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (bool, string) {
 	var value string = ""
 	startTime := time.Now()
 
-	for time.Since(startTime) < maxWaitTime {
+	for !kv.killed() && time.Since(startTime) < maxWaitTime {
+		kv.mu.Lock()
+
 		if kv.isApplied(op) {
-			kv.mu.Lock()
 			value = kv.db[op.Key]
-			kv.mu.Unlock()
 
 			// only the leader is eligible to reply Get.
 			if op.OpType == "Get" && !kv.isLeader() {
+				kv.mu.Unlock()
 				break
 			}
+
+			kv.mu.Unlock()
 			return true, value
 		}
 
+		kv.mu.Unlock()
 		time.Sleep(pollRaftInterval)
 	}
 	return false, value
 }
 
 func (kv *KVServer) isApplied(op *Op) bool {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	maxApplyOpId, exist := kv.maxAppliedOpIdOfClerk[op.ClerkId]
 	return exist && maxApplyOpId >= op.OpId
 }

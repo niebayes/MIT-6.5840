@@ -37,7 +37,7 @@ type KVServer struct {
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxRaftStateSize int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Op{})
+	labgob.Register(&Op{})
 
 	kv := new(KVServer)
 	kv.me = me
@@ -70,13 +70,18 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: "Get", Key: args.Key}
 
+	kv.mu.Lock()
 	if !kv.isApplied(op) {
 		if !kv.propose(op) {
+			kv.mu.Unlock()
+			println("S%v is not leader (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
 			reply.Err = ErrWrongLeader
 			return
 		}
 	}
+	kv.mu.Unlock()
 
+	println("S%v waits Get applied (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
 	if applied, value := kv.waitUntilAppliedOrTimeout(op); applied {
 		reply.Err = OK
 		reply.Value = value
@@ -94,13 +99,18 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: args.OpType, Key: args.Key, Value: args.Value}
 
+	kv.mu.Lock()
 	if !kv.isApplied(op) {
 		if !kv.propose(op) {
+			kv.mu.Unlock()
+			println("S%v is not leader (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
 			reply.Err = ErrWrongLeader
 			return
 		}
 	}
+	kv.mu.Unlock()
 
+	println("S%v waits PutAppend (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
 	if applied, _ := kv.waitUntilAppliedOrTimeout(op); applied {
 		reply.Err = OK
 
