@@ -31,6 +31,7 @@ type Log struct {
 	// persisted log entries.
 	entries []Entry
 
+	// TODO: add persistence for committed index and applied index only if the server layer requires.
 	applied   uint64 // the highest log index of the log entry raft knows that the application has applied.
 	committed uint64 // the highest log index of the log entry raft knows that the raft cluster has committed.
 

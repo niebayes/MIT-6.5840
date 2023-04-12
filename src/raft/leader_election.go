@@ -68,6 +68,7 @@ func (rf *Raft) sendRequestVote(args *RequestVoteArgs) {
 	}
 }
 
+// FIXME: shall a candidate only broadcast RequestVotes if there's no pending snapshot?
 func (rf *Raft) broadcastRequestVote() {
 	rf.logger.bcastRVOT()
 	for i := range rf.peers {
@@ -96,28 +97,22 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term = rf.term
 	reply.VotedTo = rf.votedTo
 
-	if args.Term < rf.term {
-		return
-	}
-
-	// TODO: use the shared Message layer to filter out so that the logger is placed here rather than at the beginning.
-
-	if args.Term > rf.term {
-		rf.becomeFollower(args.Term)
+	m := Message{Type: Vote, From: args.From, Term: args.Term}
+	ok, termChanged := rf.checkMessage(m)
+	if termChanged {
+		reply.Term = rf.term
 		defer rf.persist()
 	}
-	reply.Term = rf.term
-
-	// only a follower is eligible to grant vote.
-	if rf.state != Follower {
+	if !ok {
 		return
 	}
 
+	// FIXME: does a pending snapshot affect granting vote?
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
 		rf.votedTo = args.From
 		rf.resetElectionTimer()
-
 		reply.VotedTo = args.From
+
 		rf.logger.voteTo(args.From)
 
 	} else {
@@ -146,19 +141,12 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 
 	rf.logger.recvRVOTRes(reply)
 
-	rf.peerTrackers[reply.From].lastAck = time.Now()
-
-	if reply.Term < rf.term {
-		return
+	m := Message{Type: VoteReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term}
+	ok, termChanged := rf.checkMessage(m)
+	if termChanged {
+		defer rf.persist()
 	}
-
-	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term)
-		rf.persist()
-		return
-	}
-
-	if rf.term != args.Term || rf.state != Candidate {
+	if !ok {
 		return
 	}
 

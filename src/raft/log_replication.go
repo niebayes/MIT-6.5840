@@ -42,7 +42,7 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 			continue
 		}
 
-		// FIXME: Shall I not send a pending snapshot?
+		// FIXME: shall I not send a pending snapshot?
 		if rf.lagBehindSnapshot(i) {
 			args := rf.makeInstallSnapshot(i)
 			rf.logger.sendISNP(i, args.Snapshot.Index, args.Snapshot.Term)
@@ -88,7 +88,6 @@ func (rf *Raft) findFirstConflict(index uint64) (uint64, uint64) {
 
 func (rf *Raft) maybeCommittedTo(index uint64) {
 	if index > rf.log.committed {
-		// TODO: add persistence for committed index and applied index.
 		rf.log.committedTo(index)
 		rf.claimToBeApplied.Signal()
 	}
@@ -97,8 +96,6 @@ func (rf *Raft) maybeCommittedTo(index uint64) {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	// FIXME: Shall I reject entries if there's a pending snapshot?
 
 	if len(args.Entries) > 0 {
 		rf.logger.recvAENT(args)
@@ -111,16 +108,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Term = rf.term
 	reply.Err = Rejected
 
-	if args.Term < rf.term {
-		return
-	}
-
-	termChanged := rf.becomeFollower(args.Term)
+	m := Message{Type: Append, From: args.From, Term: args.Term}
+	ok, termChanged := rf.checkMessage(m)
 	if termChanged {
 		reply.Term = rf.term
 		defer rf.persist()
 	}
-	defer rf.resetElectionTimer()
+	if !ok {
+		return
+	}
 
 	reply.Err = rf.checkLogPrefixMatched(args.PrevLogIndex, args.PrevLogTerm)
 	if reply.Err != Matched {
@@ -180,20 +176,12 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.logger.recvHBETRes(reply)
 	}
 
-	rf.peerTrackers[reply.From].lastAck = time.Now()
-
-	if reply.Term < rf.term {
-		return
+	m := Message{Type: AppendReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term, PrevLogIndex: args.PrevLogIndex}
+	ok, termChanged := rf.checkMessage(m)
+	if termChanged {
+		defer rf.persist()
 	}
-
-	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term)
-		rf.persist()
-		return
-	}
-
-	// we must ensure that the peer is in the same state as when sending the args.
-	if rf.term != args.Term || rf.state != Leader || rf.peerTrackers[reply.From].nextIndex-1 != args.PrevLogIndex {
+	if !ok {
 		return
 	}
 
@@ -235,7 +223,7 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			}
 		}
 
-		// FIXME: figure out whether the next index can be advanced.
+		// FIXME: figure out whether the next index is eligible to be advanced.
 		rf.peerTrackers[reply.From].nextIndex = newNextIndex
 
 		newNext := rf.peerTrackers[reply.From].nextIndex

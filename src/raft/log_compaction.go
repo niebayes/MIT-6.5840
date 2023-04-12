@@ -1,9 +1,5 @@
 package raft
 
-import (
-	"time"
-)
-
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
 // service no longer needs the log through (and including)
@@ -14,6 +10,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 	rf.logger.pullSnap(uint64(index))
 
+	// FIXME: doubt this checking is necessary.
 	if rf.log.hasPendingSnapshot {
 		return
 	}
@@ -44,8 +41,6 @@ func (rf *Raft) lagBehindSnapshot(to int) bool {
 	return rf.peerTrackers[to].nextIndex <= rf.log.firstIndex()
 }
 
-// TODO: figure out if snapshotting affects leader restriction checking and log consistency checking.
-
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -57,32 +52,31 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	reply.Term = rf.term
 	reply.Installed = false
 
-	if args.Term < rf.term {
-		return
-	}
-
-	termChanged := rf.becomeFollower(args.Term)
+	m := Message{Type: Snap, From: args.From, Term: args.Term}
+	ok, termChanged := rf.checkMessage(m)
 	if termChanged {
 		reply.Term = rf.term
 		defer rf.persist()
 	}
-	defer rf.resetElectionTimer()
+	if !ok {
+		return
+	}
 
+	// reject stale snapshots.
 	if args.Snapshot.Index <= rf.log.snapshot.Index {
+		// but return Installed true to handle unreliable network, i.e. dup, reorder.
 		reply.Installed = true
 		return
 	}
 
-	if !rf.log.hasPendingSnapshot && args.Snapshot.Index > rf.log.snapshot.Index {
-		rf.log.compactedTo(args.Snapshot)
-		reply.Installed = true
-		if !termChanged {
-			defer rf.persist()
-		}
-
-		rf.log.hasPendingSnapshot = true
-		rf.claimToBeApplied.Signal()
+	rf.log.compactedTo(args.Snapshot)
+	reply.Installed = true
+	if !termChanged {
+		defer rf.persist()
 	}
+
+	rf.log.hasPendingSnapshot = true
+	rf.claimToBeApplied.Signal()
 }
 
 func (rf *Raft) handleInstallSnapshotReply(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
@@ -91,20 +85,12 @@ func (rf *Raft) handleInstallSnapshotReply(args *InstallSnapshotArgs, reply *Ins
 
 	rf.logger.recvISNPRes(reply)
 
-	rf.peerTrackers[reply.From].lastAck = time.Now()
-
-	if reply.Term < rf.term {
-		return
+	m := Message{Type: SnapReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term}
+	ok, termChanged := rf.checkMessage(m)
+	if termChanged {
+		defer rf.persist()
 	}
-
-	if reply.Term > rf.term {
-		rf.becomeFollower(reply.Term)
-		rf.persist()
-		return
-	}
-
-	// we must ensure that the peer is in the same state as when sending the args.
-	if rf.term != args.Term || rf.state != Leader || rf.peerTrackers[reply.From].nextIndex > args.Snapshot.Index {
+	if !ok {
 		return
 	}
 
