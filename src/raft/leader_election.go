@@ -95,7 +95,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.From = rf.me
 	reply.To = args.From
 	reply.Term = rf.term
-	reply.VotedTo = rf.votedTo
+	reply.Voted = false
 
 	m := Message{Type: Vote, From: args.From, Term: args.Term}
 	ok, termChanged := rf.checkMessage(m)
@@ -111,7 +111,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if (rf.votedTo == None || rf.votedTo == args.From) && rf.eligibleToGrantVote(args.LastLogIndex, args.LastLogTerm) {
 		rf.votedTo = args.From
 		rf.resetElectionTimer()
-		reply.VotedTo = args.From
+		reply.Voted = true
 
 		rf.logger.voteTo(args.From)
 
@@ -150,7 +150,7 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 		return
 	}
 
-	if reply.VotedTo == rf.me {
+	if reply.Voted {
 		rf.votedMe[reply.From] = true
 		if rf.receivedMajorityVotes() {
 			rf.becomeLeader()

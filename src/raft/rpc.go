@@ -11,10 +11,10 @@ type RequestVoteArgs struct {
 }
 
 type RequestVoteReply struct {
-	From    int
-	To      int
-	Term    uint64
-	VotedTo int
+	From  int
+	To    int
+	Term  uint64
+	Voted bool
 }
 
 type AppendEntriesArgs struct {

@@ -231,7 +231,7 @@ func (l *Logger) rejectVoteTo(to int, CandidatelastLogIndex, CandidatelastLogTer
 
 func (l *Logger) recvRVOTRes(m *RequestVoteReply) {
 	r := l.r
-	l.printf(ELEC, "N%v <- N%v RVOT RES (T:%v V:%v)", r.me, m.From, m.Term, m.VotedTo)
+	l.printf(ELEC, "N%v <- N%v RVOT RES (T:%v V:%v)", r.me, m.From, m.Term, m.Voted)
 }
 
 func (l *Logger) recvVoteQuorum() {
