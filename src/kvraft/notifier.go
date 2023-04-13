@@ -1,21 +1,35 @@
 package kvraft
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
+
+const maxWaitTime = 500 * time.Millisecond
 
 type Notifier struct {
-	done sync.Cond
+	done              sync.Cond
+	maxRegisteredOpId int
 }
 
-func (kv *KVServer) notify(op *Op) {
-	if notifer := kv.getNotifier(op, false); notifer != nil {
-		notifer.done.Broadcast()
-		delete(kv.notifierOfClerk, op.ClerkId)
-	}
+func (kv *KVServer) makeNotifier(op *Op) {
+	kv.getNotifier(op, true)
+	kv.makeAlarm(op)
+}
+
+func (kv *KVServer) makeAlarm(op *Op) {
+	go func() {
+		<-time.After(maxWaitTime)
+		kv.mu.Lock()
+		defer kv.mu.Unlock()
+		kv.notify(op)
+	}()
 }
 
 func (kv *KVServer) getNotifier(op *Op, forced bool) *Notifier {
-	if _, ok := kv.notifierOfClerk[op.ClerkId]; ok {
-		return kv.notifierOfClerk[op.ClerkId]
+	if notifer, ok := kv.notifierOfClerk[op.ClerkId]; ok {
+		notifer.maxRegisteredOpId = max(notifer.maxRegisteredOpId, op.OpId)
+		return notifer
 	}
 
 	if !forced {
@@ -24,7 +38,29 @@ func (kv *KVServer) getNotifier(op *Op, forced bool) *Notifier {
 
 	notifier := new(Notifier)
 	notifier.done = *sync.NewCond(&kv.mu)
+	notifier.maxRegisteredOpId = op.OpId
 	kv.notifierOfClerk[op.ClerkId] = notifier
 
 	return notifier
+}
+
+func (kv *KVServer) wait(op *Op) {
+	for !kv.killed() {
+		if notifier := kv.getNotifier(op, false); notifier != nil {
+			// warning: we could only use notifier.done.Wait but there's a risk of spurious wakeup or
+			// wakeup by stale ops.
+			notifier.done.Wait()
+		} else {
+			break
+		}
+	}
+}
+
+func (kv *KVServer) notify(op *Op) {
+	if notifer := kv.getNotifier(op, false); notifer != nil {
+		if op.OpId == notifer.maxRegisteredOpId {
+			delete(kv.notifierOfClerk, op.ClerkId)
+		}
+		notifer.done.Broadcast()
+	}
 }

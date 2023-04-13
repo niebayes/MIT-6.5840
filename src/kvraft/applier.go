@@ -2,10 +2,7 @@ package kvraft
 
 import (
 	"log"
-	"time"
 )
-
-const maxWaitTime = 500 * time.Millisecond
 
 func (kv *KVServer) executor() {
 	for m := range kv.applyCh {
@@ -24,7 +21,9 @@ func (kv *KVServer) executor() {
 				// skip no-ops.
 
 			} else {
-				kv.maybeApplyClientOp(op, m.CommandIndex)
+				if kv.maybeApplyClientOp(op) {
+					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, m.CommandIndex)
+				}
 			}
 		}
 
@@ -32,15 +31,15 @@ func (kv *KVServer) executor() {
 	}
 }
 
-func (kv *KVServer) maybeApplyClientOp(op *Op, index int) {
+func (kv *KVServer) maybeApplyClientOp(op *Op) bool {
 	if !kv.isApplied(op) {
 		kv.applyClientOp(op)
 		kv.maxAppliedOpIdOfClerk[op.ClerkId] = op.OpId
 
 		kv.notify(op)
-
-		println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, index)
+		return true
 	}
+	return false
 }
 
 func (kv *KVServer) applyClientOp(op *Op) {
@@ -61,44 +60,25 @@ func (kv *KVServer) applyClientOp(op *Op) {
 }
 
 func (kv *KVServer) isApplied(op *Op) bool {
-	maxApplyOpId, exist := kv.maxAppliedOpIdOfClerk[op.ClerkId]
-	return exist && maxApplyOpId >= op.OpId
+	maxAppliedOpId, ok := kv.maxAppliedOpIdOfClerk[op.ClerkId]
+	return ok && maxAppliedOpId >= op.OpId
 }
 
-func (kv *KVServer) makeAlarm(op *Op) {
-	go func() {
-		<-time.After(maxWaitTime)
-		kv.mu.Lock()
-		defer kv.mu.Unlock()
-		kv.notify(op)
-	}()
-}
-
-// TODO: test with polling.
 func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	proposeTerm := 0
 	if !kv.isApplied(op) {
 		// warning: it might be reasonable to check here if someone is waiting for the same op.
 		// however, it is not necessary and it does not increase performance as the benchmarking shows.
 
-		if proposed, term := kv.propose(op); !proposed {
+		if !kv.propose(op) {
 			return ErrWrongLeader, ""
-		} else {
-			proposeTerm = term
 		}
 
 		// wait until applied or timeout.
-		notifier := kv.getNotifier(op, true)
-		kv.makeAlarm(op)
-		notifier.done.Wait()
-	}
-
-	term, isLeader := kv.rf.GetState()
-	if op.OpType == "Get" && proposeTerm != 0 && (term != proposeTerm || !isLeader) {
-		return ErrWrongLeader, ""
+		kv.makeNotifier(op)
+		kv.wait(op)
 	}
 
 	if kv.isApplied(op) {
