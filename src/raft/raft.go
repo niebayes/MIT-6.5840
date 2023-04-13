@@ -97,6 +97,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.heartbeatTimeout = heartbeatTimeout
 	rf.resetHeartbeatTimer()
 
+	// FIXME: doubt the second checking is necessary.
 	if rf.persister.RaftStateSize() > 0 || rf.persister.SnapshotSize() > 0 {
 		rf.readPersist(rf.persister.ReadRaftState())
 	} else {

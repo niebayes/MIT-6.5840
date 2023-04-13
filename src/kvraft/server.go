@@ -31,6 +31,8 @@ type KVServer struct {
 	nextExecIndex      int
 	committedOps       map[int]*Op
 	hasNewCommittedOps sync.Cond
+
+	snapshotIndex int
 }
 
 // the k/v server should store snapshots through the underlying Raft
@@ -51,17 +53,19 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxRaftStateSize = maxRaftStateSize
 	kv.gcEnabled = maxRaftStateSize != -1
 	kv.persister = persister
+	kv.mu = sync.Mutex{}
 
 	if kv.gcEnabled && kv.persister.SnapshotSize() > 0 {
-		kv.ingestSnapshot(kv.persister.ReadSnapshot(), 0, 0)
+		kv.ingestSnapshot(kv.persister.ReadSnapshot())
 
 	} else {
 		kv.db = make(map[string]string)
 		kv.maxAppliedOpIdOfClerk = make(map[int64]int)
+		kv.snapshotIndex = 0
+		kv.nextExecIndex = kv.snapshotIndex + 1
 	}
 
 	kv.notifierOfClerk = map[int64]*Notifier{}
-	kv.nextExecIndex = 1
 	kv.committedOps = make(map[int]*Op)
 	kv.hasNewCommittedOps = *sync.NewCond(&kv.mu)
 	kv.applyCh = make(chan raft.ApplyMsg)

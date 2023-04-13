@@ -704,6 +704,7 @@ func TestSpeed3B(t *testing.T) {
 func TestSnapshotRecover3B(t *testing.T) {
 	// Test: restarts, snapshots, one client (3B) ...
 	GenericTest(t, "3B", 1, 5, false, true, false, 1000, false)
+	// GenericTest(t, "3B", 1, 5, false, true, false, 1000, false)
 }
 
 func TestSnapshotRecoverManyClients3B(t *testing.T) {

@@ -9,10 +9,19 @@ func (kv *KVServer) collector() {
 		if kv.killed() {
 			break
 		}
+
 		kv.mu.Lock()
-		kv.committedOps[m.CommandIndex] = m.Command.(*Op)
+
+		if m.CommandValid {
+			kv.committedOps[m.CommandIndex] = m.Command.(*Op)
+			kv.hasNewCommittedOps.Signal()
+
+		} else if m.SnapshotIndex > kv.snapshotIndex {
+			kv.ingestSnapshot(m.Snapshot)
+			// kv.deleteStaleOps()
+		}
+
 		kv.mu.Unlock()
-		kv.hasNewCommittedOps.Signal()
 	}
 }
 
@@ -27,6 +36,10 @@ func (kv *KVServer) executor() {
 				if kv.maybeApplyClientOp(op) {
 					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, kv.nextExecIndex)
 				}
+			}
+
+			if kv.gcEnabled && kv.approachGCLimit() {
+				kv.checkpoint(kv.nextExecIndex)
 			}
 
 			delete(kv.committedOps, kv.nextExecIndex)
