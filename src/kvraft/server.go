@@ -28,10 +28,6 @@ type KVServer struct {
 	// notifer of each clerk.
 	notifierOfClerk map[int64]*Notifier
 
-	nextExecIndex      int
-	committedOps       map[int]*Op
-	hasNewCommittedOps sync.Cond
-
 	snapshotIndex int
 }
 
@@ -62,17 +58,13 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		kv.db = make(map[string]string)
 		kv.maxAppliedOpIdOfClerk = make(map[int64]int)
 		kv.snapshotIndex = 0
-		kv.nextExecIndex = kv.snapshotIndex + 1
 	}
 
 	kv.notifierOfClerk = map[int64]*Notifier{}
-	kv.committedOps = make(map[int]*Op)
-	kv.hasNewCommittedOps = *sync.NewCond(&kv.mu)
 	kv.applyCh = make(chan raft.ApplyMsg)
 
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
-	go kv.collector()
 	go kv.executor()
 	go kv.noOpTicker()
 
@@ -80,7 +72,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	println("S%v receives Get (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
+	// println("S%v receives Get (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
 
 	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: "Get", Key: args.Key}
@@ -88,7 +80,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	println("S%v receives PutAppend (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
+	// println("S%v receives PutAppend (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
 
 	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: args.OpType, Key: args.Key, Value: args.Value}

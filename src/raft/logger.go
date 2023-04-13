@@ -9,7 +9,7 @@ import (
 )
 
 // true to turn on debugging/logging.
-const debug = true
+const debug = false
 const LOGTOFILE = false
 const printEnts = false
 

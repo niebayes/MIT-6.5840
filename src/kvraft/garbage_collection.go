@@ -8,15 +8,6 @@ import (
 // a snapshotting starts if the raft state size is higher than GCRatio * maxRaftStateSize.
 const GCRatio = 0.8
 
-func (kv *KVServer) deleteStaleOps() {
-	for i := kv.nextExecIndex; i <= kv.snapshotIndex; i++ {
-		if _, ok := kv.committedOps[i]; !ok {
-			break
-		}
-		delete(kv.committedOps, i)
-	}
-}
-
 func (kv *KVServer) approachGCLimit() bool {
 	// note: persister has its own mutex and hence no race would be raised with raft.
 	return float32(kv.persister.RaftStateSize()) > GCRatio*float32(kv.maxRaftStateSize)
@@ -29,7 +20,7 @@ func (kv *KVServer) ingestSnapshot(snapshot []byte) {
 		panic("failed to decode some fields")
 	}
 
-	kv.nextExecIndex = max(kv.nextExecIndex, kv.snapshotIndex+1)
+	println("S%v ingests snapshot (SI=%v)", kv.me, kv.snapshotIndex)
 }
 
 func (kv *KVServer) makeSnapshot() []byte {
@@ -46,4 +37,6 @@ func (kv *KVServer) checkpoint(index int) {
 	snapshot := kv.makeSnapshot()
 	kv.rf.Snapshot(index, snapshot)
 	kv.snapshotIndex = index
+
+	println("S%v checkpoints (SI=%v)", kv.me, kv.snapshotIndex)
 }

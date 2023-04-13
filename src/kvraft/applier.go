@@ -4,7 +4,7 @@ import (
 	"log"
 )
 
-func (kv *KVServer) collector() {
+func (kv *KVServer) executor() {
 	for m := range kv.applyCh {
 		if kv.killed() {
 			break
@@ -12,44 +12,26 @@ func (kv *KVServer) collector() {
 
 		kv.mu.Lock()
 
-		if m.CommandValid {
-			kv.committedOps[m.CommandIndex] = m.Command.(*Op)
-			kv.hasNewCommittedOps.Signal()
-
-		} else if m.SnapshotIndex > kv.snapshotIndex {
+		if m.SnapshotValid && m.SnapshotIndex > kv.snapshotIndex {
 			kv.ingestSnapshot(m.Snapshot)
-			// kv.deleteStaleOps()
-		}
 
-		kv.mu.Unlock()
-	}
-}
-
-func (kv *KVServer) executor() {
-	kv.mu.Lock()
-	for !kv.killed() {
-		if op, committed := kv.committedOps[kv.nextExecIndex]; committed {
+		} else if m.CommandValid {
+			op := m.Command.(*Op)
 			if kv.isNoOp(op) {
 				// skip no-ops.
-
 			} else {
 				if kv.maybeApplyClientOp(op) {
-					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, kv.nextExecIndex)
+					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, m.CommandIndex)
 				}
 			}
 
 			if kv.gcEnabled && kv.approachGCLimit() {
-				kv.checkpoint(kv.nextExecIndex)
+				kv.checkpoint(m.CommandIndex)
 			}
-
-			delete(kv.committedOps, kv.nextExecIndex)
-			kv.nextExecIndex++
-
-		} else {
-			kv.hasNewCommittedOps.Wait()
 		}
+
+		kv.mu.Unlock()
 	}
-	kv.mu.Unlock()
 }
 
 func (kv *KVServer) maybeApplyClientOp(op *Op) bool {
@@ -89,6 +71,12 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
+	if op.OpType == "Get" {
+		println("S%v receives Get (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
+	} else {
+		println("S%v receives PutAppend (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
+	}
+
 	if !kv.isApplied(op) {
 		// warning: it might be reasonable to check here if someone is waiting for the same op.
 		// however, it is not necessary and it does not increase performance as the benchmarking shows.
@@ -106,6 +94,9 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 		value := ""
 		if op.OpType == "Get" {
 			value = kv.db[op.Key]
+			println("S%v replies Get (C=%v Id=%v) with Value=%v", kv.me, op.ClerkId, op.OpId, value)
+		} else {
+			println("S%v replies PutAppend (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
 		}
 		return OK, value
 	}

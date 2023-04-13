@@ -1,8 +1,10 @@
 package raft
 
 import (
-	"6.5840/labgob"
 	"bytes"
+	"fmt"
+
+	"6.5840/labgob"
 )
 
 // save Raft's persistent state to stable storage,
@@ -40,5 +42,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// read the persisted snapshot as well.
 	rf.log.compactedTo(Snapshot{Data: rf.persister.ReadSnapshot(), Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
 
+	fmt.Printf("N%v rs (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)\n", rf.me, rf.term, rf.votedTo, rf.log.lastIndex(), rf.log.committed, rf.log.applied, rf.log.snapshot.Index, rf.log.snapshot.Term)
 	rf.logger.restore()
 }

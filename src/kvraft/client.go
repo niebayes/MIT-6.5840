@@ -55,14 +55,16 @@ func (ck *Clerk) Get(key string) string {
 	for {
 		for i := 0; i < len(ck.servers); i++ {
 			serverId := (ck.leader + i) % len(ck.servers)
-			println("C%v sends Get (Id=%v K=%v) to S%v", args.ClerkId, args.OpId, args.Key, serverId)
+			println("C%v sends Get (C=%v Id=%v K=%v) to S%v", args.ClerkId, args.ClerkId, args.OpId, args.Key, serverId)
 
 			var reply GetReply
 			if ok := ck.servers[serverId].Call("KVServer.Get", args, &reply); ok {
 				if reply.Err == OK {
 					ck.leader = serverId
+					println("C%v receives Get reply (C=%v Id=%v K=%v) from S%v with value=%v", args.ClerkId, args.ClerkId, args.OpId, args.Key, i, reply.Value)
 					return reply.Value
 				}
+				println("C%v receives Get reply (C=%v Id=%v K=%v) from S%v with Err=%v", args.ClerkId, args.ClerkId, args.OpId, args.Key, i, reply.Err)
 			}
 		}
 		time.Sleep(retryInterval)
@@ -83,14 +85,16 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	for {
 		for i := 0; i < len(ck.servers); i++ {
 			serverId := (ck.leader + i) % len(ck.servers)
-			println("C%v sends PutAppend (Id=%v T=%v K=%v V=%v) to S%v", args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, serverId)
+			println("C%v sends PutAppend (C=%v Id=%v T=%v K=%v V=%v) to S%v", args.ClerkId, args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, serverId)
 
 			var reply PutAppendReply
 			if ok := ck.servers[serverId].Call("KVServer.PutAppend", args, &reply); ok {
 				if reply.Err == OK {
 					ck.leader = serverId
+					println("C%v receives PutAppend reply (C=%v Id=%v T=%v K=%v V=%v) from S%v", args.ClerkId, args.ClerkId, args.OpId, args.OpType, args.Key, args.Value, i)
 					return
 				}
+				println("C%v receives Get reply (C=%v Id=%v K=%v) from S%v with Err=%v", args.ClerkId, args.ClerkId, args.OpId, args.Key, i, reply.Err)
 			}
 		}
 		time.Sleep(retryInterval)
