@@ -74,18 +74,31 @@ func (kv *KVServer) makeAlarm(op *Op) {
 	}()
 }
 
+// TODO: test with polling.
 func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
+	proposeTerm := 0
 	if !kv.isApplied(op) {
-		if !kv.propose(op) {
+		// warning: it might be reasonable to check here if someone is waiting for the same op.
+		// however, it is not necessary and it does not increase performance as the benchmarking shows.
+
+		if proposed, term := kv.propose(op); !proposed {
 			return ErrWrongLeader, ""
+		} else {
+			proposeTerm = term
 		}
 
+		// wait until applied or timeout.
 		notifier := kv.getNotifier(op, true)
 		kv.makeAlarm(op)
 		notifier.done.Wait()
+	}
+
+	term, isLeader := kv.rf.GetState()
+	if op.OpType == "Get" && proposeTerm != 0 && (term != proposeTerm || !isLeader) {
+		return ErrWrongLeader, ""
 	}
 
 	if kv.isApplied(op) {
