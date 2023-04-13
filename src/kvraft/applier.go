@@ -4,31 +4,39 @@ import (
 	"log"
 )
 
-func (kv *KVServer) executor() {
+func (kv *KVServer) collector() {
 	for m := range kv.applyCh {
 		if kv.killed() {
 			break
 		}
-
 		kv.mu.Lock()
+		kv.committedOps[m.CommandIndex] = m.Command.(*Op)
+		kv.mu.Unlock()
+		kv.hasNewCommittedOps.Signal()
+	}
+}
 
-		if m.SnapshotValid {
-			kv.ingestSnapshot(m.Snapshot, m.SnapshotIndex, m.SnapshotTerm)
-
-		} else {
-			op := m.Command.(*Op)
+func (kv *KVServer) executor() {
+	kv.mu.Lock()
+	for !kv.killed() {
+		if op, committed := kv.committedOps[kv.nextExecIndex]; committed {
 			if kv.isNoOp(op) {
 				// skip no-ops.
 
 			} else {
 				if kv.maybeApplyClientOp(op) {
-					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, m.CommandIndex)
+					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, kv.nextExecIndex)
 				}
 			}
-		}
 
-		kv.mu.Unlock()
+			delete(kv.committedOps, kv.nextExecIndex)
+			kv.nextExecIndex++
+
+		} else {
+			kv.hasNewCommittedOps.Wait()
+		}
 	}
+	kv.mu.Unlock()
 }
 
 func (kv *KVServer) maybeApplyClientOp(op *Op) bool {

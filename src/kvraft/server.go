@@ -27,6 +27,10 @@ type KVServer struct {
 
 	// notifer of each clerk.
 	notifierOfClerk map[int64]*Notifier
+
+	nextExecIndex      int
+	committedOps       map[int]*Op
+	hasNewCommittedOps sync.Cond
 }
 
 // the k/v server should store snapshots through the underlying Raft
@@ -57,13 +61,15 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	}
 
 	kv.notifierOfClerk = map[int64]*Notifier{}
+	kv.nextExecIndex = 1
+	kv.committedOps = make(map[int]*Op)
+	kv.hasNewCommittedOps = *sync.NewCond(&kv.mu)
 	kv.applyCh = make(chan raft.ApplyMsg)
 
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
-	// start the executor thread.
+	go kv.collector()
 	go kv.executor()
-	// start a thread to periodically propose no-ops in order to let the server catches up quickly.
 	go kv.noOpTicker()
 
 	return kv
