@@ -92,6 +92,11 @@ func (log *Log) clone(entries []Entry) []Entry {
 // if the end index is greater than the last log index, it's delimited to the last log index.
 // note, this is a slice by copy, not slice by clone.
 func (log *Log) slice(start, end uint64) ([]Entry, error) {
+	// FIXME: doubt this is necessary for a stable implementation.
+	if start >= end {
+		return nil, ErrOutOfBound
+	}
+
 	if start <= log.firstIndex() {
 		return nil, ErrOutOfBound
 	}

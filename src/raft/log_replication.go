@@ -15,6 +15,9 @@ func (rf *Raft) resetHeartbeatTimer() {
 func (rf *Raft) makeAppendEntriesArgs(to int) *AppendEntriesArgs {
 	args := new(AppendEntriesArgs)
 
+	// there's a bug that next index may go out of the last index.
+	// that's because if forced is set to true, i.e. heartbeat timeout,
+	// we have to make append entries args as well.
 	nextIndex := rf.peerTrackers[to].nextIndex
 	entries, _ := rf.log.slice(nextIndex, rf.log.lastIndex()+1)
 
@@ -235,4 +238,9 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
 		}
 	}
+
+	// FIXME: is this necessary for a stable implementation?
+	// FIXME: shall I delimit the next index at here or when slicing the log.
+	// ensure the next index won't go out of the last log index + 1.
+	// rf.peerTrackers[reply.From].nextIndex = min(rf.peerTrackers[reply.From].nextIndex, rf.log.lastIndex()+1)
 }
