@@ -12,15 +12,20 @@ func (kv *KVServer) executor() {
 
 		kv.mu.Lock()
 
-		if m.SnapshotValid && m.SnapshotIndex > kv.snapshotIndex {
+		// FIXME: figure why a snapshot index would less than the last applied.
+		if m.SnapshotValid && m.SnapshotIndex > kv.snapshotIndex && m.SnapshotIndex >= kv.lastApplied {
 			kv.ingestSnapshot(m.Snapshot)
 
 		} else if m.CommandValid {
+			// FIXME: shall I check command index > snapshot index?
 			op := m.Command.(*Op)
 			if kv.isNoOp(op) {
 				// skip no-ops.
-			} else {
+
+				// FIXME: figure out is it necessary to check last applied.
+			} else if m.CommandIndex > kv.lastApplied {
 				if kv.maybeApplyClientOp(op) {
+					kv.lastApplied = m.CommandIndex
 					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, m.CommandIndex)
 				}
 			}

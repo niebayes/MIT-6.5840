@@ -20,7 +20,10 @@ func (kv *KVServer) ingestSnapshot(snapshot []byte) {
 		panic("failed to decode some fields")
 	}
 
+	kv.lastApplied = kv.snapshotIndex
+
 	println("S%v ingests snapshot (SI=%v)", kv.me, kv.snapshotIndex)
+	println("S%v ingests with (SI=%v db=%v maxAppliedOpId=%v)", kv.me, kv.snapshotIndex, kv.db, kv.maxAppliedOpIdOfClerk)
 }
 
 func (kv *KVServer) makeSnapshot() []byte {
@@ -34,9 +37,19 @@ func (kv *KVServer) makeSnapshot() []byte {
 }
 
 func (kv *KVServer) checkpoint(index int) {
+	kv.snapshotIndex = index
 	snapshot := kv.makeSnapshot()
 	kv.rf.Snapshot(index, snapshot)
-	kv.snapshotIndex = index
 
 	println("S%v checkpoints (SI=%v)", kv.me, kv.snapshotIndex)
+	var snapshotIndex int
+	db := make(map[string]string)
+	maxAppliedOpIdOfClerk := make(map[int64]int)
+	nw := bytes.NewBuffer(snapshot)
+	d := labgob.NewDecoder(nw)
+	if d.Decode(&snapshotIndex) != nil || d.Decode(&db) != nil || d.Decode(&maxAppliedOpIdOfClerk) != nil {
+		panic("failed to decode some fields")
+	}
+	println("S%v checkpoints with (SI=%v db=%v maxAppliedOpId=%v)", kv.me, snapshotIndex, db, maxAppliedOpIdOfClerk)
+
 }

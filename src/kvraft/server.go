@@ -29,6 +29,7 @@ type KVServer struct {
 	notifierOfClerk map[int64]*Notifier
 
 	snapshotIndex int
+	lastApplied   int
 }
 
 // the k/v server should store snapshots through the underlying Raft
@@ -58,6 +59,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		kv.db = make(map[string]string)
 		kv.maxAppliedOpIdOfClerk = make(map[int64]int)
 		kv.snapshotIndex = 0
+		kv.lastApplied = kv.snapshotIndex
 	}
 
 	kv.notifierOfClerk = map[int64]*Notifier{}

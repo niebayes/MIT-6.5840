@@ -305,6 +305,8 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 					// the following check only makes sense when we're not using random keys
 					if !randomkeys && v != last {
 						t.Fatalf("get wrong value, key %v, wanted:\n%v\n, got\n%v\n", key, last, v)
+						atomic.StoreInt32(&done_clients, 1)     // tell clients to quit
+						atomic.StoreInt32(&done_partitioner, 1) // tell partitioner to quit
 					}
 				}
 			}
