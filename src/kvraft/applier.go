@@ -72,6 +72,7 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
+	// TODO: remove all logging.
 	if op.OpType == "Get" {
 		println("S%v receives Get (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
 	} else {

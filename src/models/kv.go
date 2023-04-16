@@ -16,11 +16,13 @@ type KvOutput struct {
 
 var KvModel = porcupine.Model{
 	Partition: func(history []porcupine.Operation) [][]porcupine.Operation {
+		// group operations by key.
 		m := make(map[string][]porcupine.Operation)
 		for _, v := range history {
 			key := v.Input.(KvInput).Key
 			m[key] = append(m[key], v)
 		}
+		// sort the operations by key.
 		keys := make([]string, 0, len(m))
 		for k := range m {
 			keys = append(keys, k)
@@ -30,6 +32,7 @@ var KvModel = porcupine.Model{
 		for _, k := range keys {
 			ret = append(ret, m[k])
 		}
+		// the returned operations are sorted by key and grouped by key.
 		return ret
 	},
 	Init: func() interface{} {

@@ -102,9 +102,9 @@ func (rf *Raft) checkState(m Message) bool {
 	case Vote:
 		fallthrough
 	case Append:
-		fallthrough
-	case Snap:
 		eligible = rf.state == Follower
+	case Snap:
+		eligible = rf.state == Follower && !rf.log.hasPendingSnapshot
 
 	case VoteReply:
 		// `rf.term == m.Term` ensures that the sender is in the same term as when sending the message.

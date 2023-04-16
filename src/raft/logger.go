@@ -29,77 +29,11 @@ func (l *Logger) printEnts(topic logTopic, me int, ents []Entry) {
 type logTopic string
 
 const (
-	// the typical route of leader election is:
-	// 	becomeFollower
-	//		election time out
-	//		send MsgHup to self
-	//	becomeCandidate
-	//  bcastRequestVote
-	//		other peers: handleRequestVote
-	//			grant vote
-	//			deny vote
-	//	handleRequestVoteResponse
-	//		receive a majority of votes
-	// 	becomeLeader
-	//		append a noop entry
-	//		bcast the noop entry
 	ELEC logTopic = "ELEC"
-
-	// the typical route of log replication is:
-	//	receive MsgProp
-	//		append these log entries
-	//		update leader's own progress
-	//	bcastAppendEntries
-	//		other peers: handleAppendEntries
-	//			reject the whole entries due to index conflict or term conflict
-	//			accept the whole entries but discard conflicting entries and only append missing entries.
-	//	handleAppendEntriesResponse
-	//		leader update follower's progress: next index and match index
-	//		leader knows which entries are committed
-	//	bcastHeartbeat
-	//		other peers know which entries are committed
-	// 	handleHeartbeatResponse
-	//		leader notifys slow followers and send AppendEntries to make them catch up.
-	//		...
-	//		all alive followers commit the log entries
-	//
 	LRPE logTopic = "LRPE"
-
-	// heartbeat events:
-	// leader heartbeat time out
-	// leader broadcast HeartBeat
-	// others receive HeartBeat
-	// leader receive HeartBeatResponse
 	BEAT logTopic = "BEAT"
-
-	// persistence events:
-	// restore stable entries from stable storage.
-	// restore term, vote, commit from hardstate.
-	// restore nodes config from confstate.
-	// persist unstable log entrie.
-	// update and save hardstate
-	// update and save applystate.
 	PERS logTopic = "PERS"
-
-	// peer handling events:
-	//	start raft module
-	//  propose new raft cmd
-	//  detect ready raft states.
-	//  notify clients stale proposals.
-	//  process committed log entry/raft cmd
-	//  advance raft state
 	PEER logTopic = "PEER"
-
-	// snapshotting events:
-	// TODO: add document for log compaction and snapshotting.
-	// the typical route of snapshotting is:
-	//
-	// service sends a snapshot
-	// server snapshots
-	// leader detects a follower is lagging hebind
-	// leader sends InstallSnapshot to lagged follower
-	// follower forwards snapshot to service
-	// service conditionally installs a snapshot by asking Raft.
 	SNAP logTopic = "SNAP"
 )
 

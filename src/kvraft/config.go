@@ -275,7 +275,6 @@ func (cfg *config) ShutdownServer(i int) {
 	// pass Make() the last persisted state.
 	if cfg.saved[i] != nil {
 		cfg.saved[i] = cfg.saved[i].Copy()
-		// TODO: add logs here.
 	}
 
 	kv := cfg.kvservers[i]
