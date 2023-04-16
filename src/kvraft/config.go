@@ -203,7 +203,6 @@ func (cfg *config) makeClient(to []int) *Clerk {
 		cfg.net.Connect(endnames[j], j)
 	}
 
-	// FIXME: is the randomization necessary?
 	// ck := MakeClerk(random_handles(ends))
 	ck := MakeClerk(ends)
 	cfg.clerks[ck] = endnames

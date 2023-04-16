@@ -12,7 +12,6 @@ func (kv *KVServer) executor() {
 
 		kv.mu.Lock()
 
-		// FIXME: doubt the snapshot index checking is necessary.
 		if m.SnapshotValid {
 			kv.ingestSnapshot(m.Snapshot)
 

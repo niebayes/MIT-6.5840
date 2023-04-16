@@ -68,7 +68,6 @@ func (rf *Raft) sendRequestVote(args *RequestVoteArgs) {
 	}
 }
 
-// FIXME: shall a candidate only broadcast RequestVotes if there's no pending snapshot?
 func (rf *Raft) broadcastRequestVote() {
 	rf.logger.bcastRVOT()
 	for i := range rf.peers {

@@ -20,6 +20,7 @@ func (kv *KVServer) ingestSnapshot(snapshot []byte) {
 		panic("failed to decode some fields")
 	}
 
+	// TODO: remove stale comments.
 	// kv.lastApplied = kv.snapshotIndex
 
 	// println("S%v ingests snapshot (SI=%v)", kv.me, )

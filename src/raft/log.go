@@ -2,6 +2,7 @@ package raft
 
 import (
 	"errors"
+	"fmt"
 )
 
 var ErrOutOfBound = errors.New("index out of bound")
@@ -147,6 +148,7 @@ func (log *Log) compactedTo(snapshot Snapshot) {
 	suffixStart := snapshot.Index + 1
 	if suffixStart <= log.lastIndex() {
 		suffixStart = log.toArrayIndex(suffixStart)
+		fmt.Printf("suffixStart=%v FI=%v LI=%v SI=%v\n", suffixStart, log.firstIndex(), log.lastIndex(), snapshot.Index)
 		suffix = log.entries[suffixStart:]
 	}
 
