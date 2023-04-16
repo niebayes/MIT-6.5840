@@ -10,6 +10,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 	rf.logger.pullSnap(uint64(index))
 
+	// TODO: remove hasPendingSnapshot.
 	// FIXME: doubt this checking is necessary.
 	if rf.log.hasPendingSnapshot {
 		return
@@ -18,6 +19,8 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	snapshotIndex := uint64(index)
 	snapshotTerm, err := rf.log.term(snapshotIndex)
 	// FIXME: doubt the err checking is necessary.
+	// if snapshot index > rf.log.snapshot.Index, then snapshotTerm must be found and hence
+	// the err checking is unnecessary.
 	if err == nil && snapshotIndex > rf.log.snapshot.Index {
 		rf.log.compactedTo(Snapshot{Data: snapshot, Index: snapshotIndex, Term: snapshotTerm})
 		rf.persist()
@@ -63,6 +66,11 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 
 	// reject stale snapshots.
+	// TODO: reject snapshot if snapshot index <= rf.log.committed
+	// this is because an InstallSnapshot is used to bring a lag-behind
+	// peer up-to-date, and the peer may have already caught up.
+	// reply Installed true as well.
+	// TODO: rename Installed with CaughtUp.
 	if args.Snapshot.Index <= rf.log.snapshot.Index {
 		// but return Installed true to handle unreliable network, i.e. dup, reorder.
 		reply.Installed = true

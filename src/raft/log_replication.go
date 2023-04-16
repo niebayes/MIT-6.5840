@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -19,7 +20,11 @@ func (rf *Raft) makeAppendEntriesArgs(to int) *AppendEntriesArgs {
 	// that's because if forced is set to true, i.e. heartbeat timeout,
 	// we have to make append entries args as well.
 	nextIndex := rf.peerTrackers[to].nextIndex
-	entries, _ := rf.log.slice(nextIndex, rf.log.lastIndex()+1)
+	entries, err := rf.log.slice(nextIndex, rf.log.lastIndex()+1)
+	if err != nil {
+		fmt.Printf("N%v start=%v end=%v FI=%v LI=%v -> N%v\n", rf.me, nextIndex, rf.log.lastIndex()+1, rf.log.firstIndex(), rf.log.lastIndex(), to)
+		panic(err)
+	}
 
 	prevLogIndex := nextIndex - 1
 	prevLogTerm, _ := rf.log.term(prevLogIndex)

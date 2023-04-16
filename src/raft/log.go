@@ -93,7 +93,7 @@ func (log *Log) clone(entries []Entry) []Entry {
 // note, this is a slice by copy, not slice by clone.
 func (log *Log) slice(start, end uint64) ([]Entry, error) {
 	// FIXME: doubt this is necessary for a stable implementation.
-	if start >= end {
+	if start > end {
 		return nil, ErrOutOfBound
 	}
 

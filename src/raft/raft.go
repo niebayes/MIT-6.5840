@@ -137,6 +137,9 @@ func (rf *Raft) ticker() {
 			if !rf.quorumActive() {
 				rf.logger.stepDown()
 				rf.becomeFollower(rf.term)
+				// TODO: persist if term changed.
+				// FIXME: Shall I persist at here?
+				// FIXME: reset votedTo if step down?
 				break
 			}
 

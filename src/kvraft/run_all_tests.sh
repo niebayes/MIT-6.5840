@@ -3,4 +3,5 @@
 # python3 dstest --iter 100 --workers 10 --timeout 60 --output out.log TestSnapshotRPC3B TestSnapshotSize3B TestSpeed3B TestSnapshotRecover3B TestSnapshotRecoverManyClients3B TestSnapshotUnreliable3B TestSnapshotUnreliableRecover3B TestSnapshotUnreliableRecoverConcurrentPartition3B TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B
 # python3 dstest --iter 100 --workers 10 --timeout 60 --output out.log TestSnapshotRPC3B TestSnapshotSize3B TestSpeed3B
 # python3 dstest --iter 100 --workers 10 --timeout 60 --output out.log TestSnapshotRecoverManyClients3B TestSnapshotUnreliable3B TestSnapshotUnreliableRecover3B TestSnapshotUnreliableRecoverConcurrentPartition3B TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B
-python3 dstest --iter 10000 --workers 10 --timeout 40 --output out.log TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B
+# python3 dstest --iter 10000 --workers 10 --timeout 40 --output out.log TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B
+python3 dstest --iter 10000 --workers 10 --timeout 40 --output out.log TestSnapshotRecover3B
