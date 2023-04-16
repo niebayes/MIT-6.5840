@@ -54,10 +54,10 @@ type InstallSnapshotArgs struct {
 }
 
 type InstallSnapshotReply struct {
-	From      int
-	To        int
-	Term      uint64
-	Installed bool
+	From     int
+	To       int
+	Term     uint64
+	CaughtUp bool
 }
 
 type MessageType string
@@ -100,17 +100,11 @@ func (rf *Raft) checkState(m Message) bool {
 	switch m.Type {
 	// only a follower is eligible to handle RequestVote, AppendEntries, and InstallSnapshot.
 	case Vote:
-		eligible = rf.state == Follower
+		fallthrough
 	case Append:
-		// reject new log entries if there's a snapshot pending to be installed on the state machine.
-		// warning: it's actually eligible to append new log entries even if there's a pending snapshot.
-		// but we think it's more reasonable to reject new log entries if there's a pending snapshot.
-		eligible = rf.state == Follower && !rf.log.hasPendingSnapshot
+		fallthrough
 	case Snap:
-		// reject new snapshots if there's a snapshot pending to be installed on the state machine.
-		// warning: it might be better to not check for pending here so that a raft peer could reply Installed true
-		// if received a stale snapshot while there's a pending snapshot.
-		eligible = rf.state == Follower && !rf.log.hasPendingSnapshot
+		eligible = rf.state == Follower
 
 	case VoteReply:
 		// `rf.term == m.Term` ensures that the sender is in the same term as when sending the message.
@@ -135,20 +129,6 @@ func (rf *Raft) checkState(m Message) bool {
 	return eligible
 }
 
-// insert the following code snippet at the beginning of each RPC handler.
-// warning: construct the Message m carefully for each type of RPC.
-//
-// m := Message{...}
-// ok, termChanged := rf.checkMessage(m)
-//
-//	if termChanged {
-//		reply.Term = rf.term  // this line shall be omitted in reply handlers.
-//		defer rf.persist()
-//	}
-//
-//	if !ok {
-//		return
-//	}
 func (rf *Raft) checkMessage(m Message) (bool, bool) {
 	// refresh the step down timer if received a reply.
 	// warning: no need to differentiate peer state.

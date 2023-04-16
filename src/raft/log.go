@@ -26,12 +26,12 @@ type Snapshot struct {
 type Log struct {
 	// compacted log entries.
 	snapshot           Snapshot
-	hasPendingSnapshot bool
+	hasPendingSnapshot bool // true if the snapshot is not yet delivered to the application.
 
 	// persisted log entries.
 	entries []Entry
 
-	// TODO: add persistence for committed index and applied index only if the server layer requires.
+	// TODO: rename applied with delivered. Update comments and docs as well.
 	applied   uint64 // the highest log index of the log entry raft knows that the application has applied.
 	committed uint64 // the highest log index of the log entry raft knows that the raft cluster has committed.
 
@@ -87,29 +87,13 @@ func (log *Log) clone(entries []Entry) []Entry {
 	return cloned
 }
 
-// slice out log entries in the range [start, end).
-// if the start index is less than or equal to the first index, an error is returned.
-// if the end index is greater than the last log index, it's delimited to the last log index.
-// note, this is a slice by copy, not slice by clone.
 func (log *Log) slice(start, end uint64) ([]Entry, error) {
-	// FIXME: doubt this is necessary for a stable implementation.
-	if start > end {
-		return nil, ErrOutOfBound
-	}
-
-	if start <= log.firstIndex() {
-		return nil, ErrOutOfBound
-	}
-
-	end = min(end, log.lastIndex()+1)
-
 	if start == end {
-		return make([]Entry, 0), nil
+		return nil, nil
 	}
 
 	start = log.toArrayIndex(start)
 	end = log.toArrayIndex(end)
-
 	return log.clone(log.entries[start:end]), nil
 }
 

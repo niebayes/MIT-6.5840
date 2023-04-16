@@ -14,7 +14,7 @@ package raft
 // ApplyMsg
 //   each time a new entry is committed to the log, each Raft peer
 //   should send an ApplyMsg to the service (or tester)
-//   in the same server.
+//   in the same order.
 //
 
 import (
@@ -28,7 +28,7 @@ import (
 // warning: the ticking granularity may acquire to be increased if there're more raft peers.
 const tickInterval = 50 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
-const None = -1 // to indicate a peer has not voted to anyone.
+const None = -1 // to indicate a peer has not voted to anyone at the current term.
 
 // TODO: change to string type.
 type PeerState int
@@ -68,15 +68,6 @@ type Raft struct {
 	logger Logger
 }
 
-// the service or tester wants to create a Raft server. the ports
-// of all the Raft servers (including this one) are in peers[]. this
-// server's port is peers[me]. all the servers' peers[] arrays
-// have the same order. persister is a place for this server to
-// save its persistent state, and also initially holds the most
-// recent saved state, if any. applyCh is a channel on which the
-// tester or service expects Raft to send ApplyMsg messages.
-// Make() must return quickly, so it should start goroutines
-// for any long-running work.
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
@@ -94,24 +85,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log = makeLog()
 	rf.log.logger = &rf.logger
 
-	rf.heartbeatTimeout = heartbeatTimeout
-	rf.resetHeartbeatTimer()
-
-	// FIXME: doubt the second checking is necessary.
-	if rf.persister.RaftStateSize() > 0 || rf.persister.SnapshotSize() > 0 {
+	if rf.persister.RaftStateSize() > 0 {
 		rf.readPersist(rf.persister.ReadRaftState())
+
 	} else {
 		rf.term = 0
 		rf.votedTo = None
 	}
 
-	rf.state = Follower
-	rf.resetElectionTimer()
-	rf.logger.stateToFollower(rf.term)
-
 	// update tracker indexes with the restored log entries.
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
 	rf.resetTrackedIndexes()
+
+	rf.state = Follower
+	rf.resetElectionTimer()
+	rf.heartbeatTimeout = heartbeatTimeout
+	rf.logger.stateToFollower(rf.term)
 
 	go rf.ticker()
 	go rf.committer()
@@ -137,9 +126,6 @@ func (rf *Raft) ticker() {
 			if !rf.quorumActive() {
 				rf.logger.stepDown()
 				rf.becomeFollower(rf.term)
-				// TODO: persist if term changed.
-				// FIXME: Shall I persist at here?
-				// FIXME: reset votedTo if step down?
 				break
 			}
 
@@ -156,23 +142,11 @@ func (rf *Raft) ticker() {
 	}
 }
 
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
-// this function should return gracefully.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// FIXME: doubt the checking of `killed` is necessary.
+	// warning: `rf.killed` checking is not necessary.
 	isLeader := !rf.killed() && rf.state == Leader
 	if !isLeader {
 		return 0, 0, false
@@ -185,6 +159,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	rf.broadcastAppendEntries(true)
 
+	// warning: the returned index and term are only used by tests.
 	return int(index), int(rf.term), true
 }
 
@@ -193,7 +168,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) GetState() (int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// FIXME: doubt the checking of `killed` is necessary.
+	// warning: `rf.killed` checking is not necessary.
 	return int(rf.term), !rf.killed() && rf.state == Leader
 }
 

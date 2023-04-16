@@ -50,7 +50,6 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 			continue
 		}
 
-		// FIXME: shall I not send a pending snapshot?
 		if rf.lagBehindSnapshot(i) {
 			args := rf.makeInstallSnapshot(i)
 			rf.logger.sendISNP(i, args.Snapshot.Index, args.Snapshot.Term)
@@ -166,7 +165,7 @@ func (rf *Raft) quorumMatched(index uint64) bool {
 
 func (rf *Raft) maybeCommitMatched(index uint64) bool {
 	for i := index; i > rf.log.committed; i-- {
-		if term, err := rf.log.term(i); err == nil && term == rf.term && rf.quorumMatched(i) {
+		if term, _ := rf.log.term(i); term == rf.term && rf.quorumMatched(i) {
 			rf.log.committedTo(i)
 			rf.claimToBeApplied.Signal()
 			return true
@@ -216,7 +215,14 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		}
 
 	case IndexNotMatched:
-		rf.peerTrackers[reply.From].nextIndex = reply.LastLogIndex + 1
+		// warning: only if the follower's log is actually shorter than the leader's,
+		// the leader could adopt the follower's last log index.
+		// in any cases, the next index cannot be larger than the leader's last log index + 1.
+		if reply.LastLogIndex < rf.log.lastIndex() {
+			rf.peerTrackers[reply.From].nextIndex = reply.LastLogIndex + 1
+		} else {
+			rf.peerTrackers[reply.From].nextIndex = rf.log.lastIndex() + 1
+		}
 
 		newNext := rf.peerTrackers[reply.From].nextIndex
 		newMatch := rf.peerTrackers[reply.From].matchIndex
@@ -243,9 +249,4 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
 		}
 	}
-
-	// FIXME: is this necessary for a stable implementation?
-	// FIXME: shall I delimit the next index at here or when slicing the log.
-	// ensure the next index won't go out of the last log index + 1.
-	// rf.peerTrackers[reply.From].nextIndex = min(rf.peerTrackers[reply.From].nextIndex, rf.log.lastIndex()+1)
 }

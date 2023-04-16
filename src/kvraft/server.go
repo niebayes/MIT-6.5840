@@ -25,18 +25,10 @@ type KVServer struct {
 	// the maximum op id among all applied ops of each clerk.
 	maxAppliedOpIdOfClerk map[int64]int
 
-	// notifer of each clerk.
+	// notifier of each clerk.
 	notifierOfClerk map[int64]*Notifier
 }
 
-// the k/v server should store snapshots through the underlying Raft
-// implementation, which should call persister.Save() to
-// atomically save the Raft state along with the snapshot.
-// the k/v server should snapshot when Raft's saved state exceeds maxraftstate bytes,
-// in order to allow Raft to garbage-collect its log. if maxraftstate is -1,
-// you don't need to snapshot.
-// StartKVServer() must return quickly, so it should start goroutines
-// for any long-running work.
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxRaftStateSize int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
@@ -44,10 +36,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	kv := new(KVServer)
 	kv.me = me
-	kv.maxRaftStateSize = maxRaftStateSize
-	kv.gcEnabled = maxRaftStateSize != -1
 	kv.persister = persister
 	kv.mu = sync.Mutex{}
+
+	kv.maxRaftStateSize = maxRaftStateSize
+	kv.gcEnabled = maxRaftStateSize != -1
 
 	if kv.gcEnabled && kv.persister.SnapshotSize() > 0 {
 		kv.ingestSnapshot(kv.persister.ReadSnapshot())
@@ -58,8 +51,8 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	}
 
 	kv.notifierOfClerk = map[int64]*Notifier{}
-	kv.applyCh = make(chan raft.ApplyMsg)
 
+	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	go kv.executor()
@@ -69,17 +62,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// println("S%v receives Get (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
-
-	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: "Get", Key: args.Key}
 	reply.Err, reply.Value = kv.waitUntilAppliedOrTimeout(op)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// println("S%v receives PutAppend (C=%v Id=%v)", kv.me, args.ClerkId, args.OpId)
-
-	// wrap the request into an op.
 	op := &Op{ClerkId: args.ClerkId, OpId: args.OpId, OpType: args.OpType, Key: args.Key, Value: args.Value}
 	reply.Err, _ = kv.waitUntilAppliedOrTimeout(op)
 }

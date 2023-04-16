@@ -390,7 +390,7 @@ func (l *Logger) recvISNP(m *InstallSnapshotArgs) {
 
 func (l *Logger) recvISNPRes(m *InstallSnapshotReply) {
 	r := l.r
-	l.printf(SNAP, "N%v <- N%v ISNP RES (IS:%v)", r.me, m.From, m.Installed)
+	l.printf(SNAP, "N%v <- N%v ISNP RES (IS:%v)", r.me, m.From, m.CaughtUp)
 }
 
 func (l *Logger) pullSnap(snapshotIndex uint64) {

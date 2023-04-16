@@ -5,3 +5,4 @@ api.key
 .vscode
 .DS_Store
 out*
+myout*
