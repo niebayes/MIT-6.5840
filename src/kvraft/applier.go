@@ -15,7 +15,7 @@ func (kv *KVServer) executor() {
 		if m.SnapshotValid {
 			kv.ingestSnapshot(m.Snapshot)
 
-		} else if m.CommandValid {
+		} else {
 			op := m.Command.(*Op)
 			if kv.isNoOp(op) {
 				// skip no-ops.
