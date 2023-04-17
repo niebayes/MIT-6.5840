@@ -104,6 +104,7 @@ func (rf *Raft) checkState(m Message) bool {
 	case Append:
 		eligible = rf.state == Follower
 	case Snap:
+		// warning: not rejecting a new snapshot if there's a pending snapshot may shadow the new snapshot.
 		eligible = rf.state == Follower && !rf.log.hasPendingSnapshot
 
 	case VoteReply:

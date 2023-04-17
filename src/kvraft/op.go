@@ -19,8 +19,6 @@ func (kv *KVServer) isNoOp(op *Op) bool {
 }
 
 func (kv *KVServer) noOpTicker() {
-	return
-
 	// warning: the no-op ticker could be omitted.
 	for !kv.killed() {
 		if kv.isLeader() {

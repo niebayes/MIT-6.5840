@@ -7,13 +7,6 @@ import (
 	"6.5840/labgob"
 )
 
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-// before you've implemented snapshots, you should pass nil as the
-// second argument to persister.Save().
-// after you've implemented snapshots, pass the current snapshot
-// (or nil if there's not yet a snapshot).
 func (rf *Raft) persist() {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
@@ -30,7 +23,6 @@ func (rf *Raft) persist() {
 	}
 }
 
-// restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
@@ -38,9 +30,7 @@ func (rf *Raft) readPersist(data []byte) {
 		panic("failed to decode some fields")
 	}
 
-	// since the server layer entrusts the raft layer to persist snapshot, the raft layer must also
-	// read the persisted snapshot as well.
-	rf.log.compactedTo(Snapshot{Data: rf.persister.ReadSnapshot(), Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
+	rf.log.compactedTo(Snapshot{Data: nil, Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
 
 	fmt.Printf("N%v rs (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)\n", rf.me, rf.term, rf.votedTo, rf.log.lastIndex(), rf.log.committed, rf.log.applied, rf.log.snapshot.Index, rf.log.snapshot.Term)
 	rf.logger.restore()

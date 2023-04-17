@@ -11,7 +11,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.logger.pullSnap(uint64(index))
 
 	// it's possible there's a pending snapshot received from the leader that is not delivered yet to the
-	// server. The server may meanwhile checkpoint at a lower snapshot index which may produce a snapshot.
+	// server. The server may meanwhile checkpoint at a lower snapshot index which may produce a stale snapshot.
 	snapshotIndex := uint64(index)
 	if snapshotIndex <= rf.log.snapshot.Index {
 		return
@@ -62,7 +62,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 	// reject the snapshot if this peer has already caught up.
 	if args.Snapshot.Index <= rf.log.committed {
-		// but return CaughtUp true to handle unreliable network, e.g. dup, reorder.
+		// but return `CaughtUp` true to handle unreliable network, e.g. discard, dup.
 		reply.CaughtUp = true
 		return
 	}

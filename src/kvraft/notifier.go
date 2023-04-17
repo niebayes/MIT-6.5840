@@ -47,10 +47,10 @@ func (kv *KVServer) getNotifier(op *Op, forced bool) *Notifier {
 func (kv *KVServer) wait(op *Op) {
 	println("S%v waits applied (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
 
+	// warning: we could only use `notifier.done.Wait` but there's a risk of spurious wakeup or
+	// wakeup by stale ops.
 	for !kv.killed() {
 		if notifier := kv.getNotifier(op, false); notifier != nil {
-			// warning: we could only use notifier.done.Wait but there's a risk of spurious wakeup or
-			// wakeup by stale ops.
 			notifier.done.Wait()
 		} else {
 			break

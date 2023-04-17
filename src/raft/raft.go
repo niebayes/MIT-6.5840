@@ -5,6 +5,8 @@ package raft
 // the service (or tester). see comments below for
 // each of these functions for more details.
 //
+// warning: `GetState` is not necessary.
+//
 // rf = Make(...)
 //   create a new Raft server.
 // rf.Start(command interface{}) (index, term, isleader)
@@ -30,7 +32,6 @@ const tickInterval = 50 * time.Millisecond
 const heartbeatTimeout = 150 * time.Millisecond
 const None = -1 // to indicate a peer has not voted to anyone at the current term.
 
-// TODO: change to string type.
 type PeerState int
 
 const (
@@ -60,7 +61,7 @@ type Raft struct {
 
 	log Log
 
-	peerTrackers []PeerTracker // keeps track of each peer's next index and match index.
+	peerTrackers []PeerTracker // keeps track of each peer's next index, match index, etc.
 
 	applyCh          chan<- ApplyMsg
 	claimToBeApplied sync.Cond
@@ -159,12 +160,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	rf.broadcastAppendEntries(true)
 
-	// warning: the returned index and term are only used by tests.
+	// warning: the returned index and term are only used by tester and logger.
 	return int(index), int(rf.term), true
 }
 
-// return currentTerm and whether this server
-// believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()

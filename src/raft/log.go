@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// warning: not used actually.
 var ErrOutOfBound = errors.New("index out of bound")
 
 type Entry struct {
@@ -58,7 +59,8 @@ func (log *Log) setDummy() {
 }
 
 func (log *Log) toArrayIndex(index uint64) uint64 {
-	// warning: be careful of integer underflow. (No way to occur in my implementation)
+	// warning: an unstable implementation may incur integer underflow.
+	// my implementation is stable now.
 	return index - log.firstIndex()
 }
 
@@ -77,7 +79,6 @@ func (log *Log) term(index uint64) (uint64, error) {
 	if index < log.firstIndex() || index > log.lastIndex() {
 		return 0, ErrOutOfBound
 	}
-
 	index = log.toArrayIndex(index)
 	return log.entries[index].Term, nil
 }
@@ -88,14 +89,14 @@ func (log *Log) clone(entries []Entry) []Entry {
 	return cloned
 }
 
-func (log *Log) slice(start, end uint64) ([]Entry, error) {
+func (log *Log) slice(start, end uint64) []Entry {
 	if start == end {
-		return nil, nil
+		// can only happen when sending a heartbeat.
+		return nil
 	}
-
 	start = log.toArrayIndex(start)
 	end = log.toArrayIndex(end)
-	return log.clone(log.entries[start:end]), nil
+	return log.clone(log.entries[start:end])
 }
 
 func (log *Log) truncateSuffix(index uint64) bool {
