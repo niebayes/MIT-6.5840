@@ -94,7 +94,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		rf.votedTo = None
 	}
 
-	// update tracker indexes with the restored log entries.
+	// update tracked indexes with the restored log entries.
 	rf.peerTrackers = make([]PeerTracker, len(rf.peers))
 	rf.resetTrackedIndexes()
 
@@ -118,14 +118,12 @@ func (rf *Raft) ticker() {
 			fallthrough
 		case Candidate:
 			if rf.pastElectionTimeout() {
-				rf.logger.elecTimeout()
 				rf.becomeCandidate()
 				rf.broadcastRequestVote()
 			}
 
 		case Leader:
 			if !rf.quorumActive() {
-				rf.logger.stepDown()
 				rf.becomeFollower(rf.term)
 				break
 			}
