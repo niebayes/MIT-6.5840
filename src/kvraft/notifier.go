@@ -45,8 +45,6 @@ func (kv *KVServer) getNotifier(op *Op, forced bool) *Notifier {
 }
 
 func (kv *KVServer) wait(op *Op) {
-	println("S%v waits applied (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
-
 	// warning: we could only use `notifier.done.Wait` but there's a risk of spurious wakeup or
 	// wakeup by stale ops.
 	for !kv.killed() {
@@ -60,10 +58,10 @@ func (kv *KVServer) wait(op *Op) {
 
 func (kv *KVServer) notify(op *Op) {
 	if notifer := kv.getNotifier(op, false); notifer != nil {
+		// only the latest op can delete the notifier.
 		if op.OpId == notifer.maxRegisteredOpId {
 			delete(kv.notifierOfClerk, op.ClerkId)
 		}
 		notifer.done.Broadcast()
-		println("S%v notifies applied (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
 	}
 }

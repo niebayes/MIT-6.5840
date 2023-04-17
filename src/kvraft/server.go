@@ -25,7 +25,7 @@ type KVServer struct {
 	// the maximum op id among all applied ops of each clerk.
 	maxAppliedOpIdOfClerk map[int64]int
 
-	// notifier of each clerk.
+	// notifier for each clerk.
 	notifierOfClerk map[int64]*Notifier
 }
 

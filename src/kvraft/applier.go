@@ -21,9 +21,7 @@ func (kv *KVServer) executor() {
 				// skip no-ops.
 
 			} else {
-				if kv.maybeApplyClientOp(op) {
-					println("S%v applied client op (C=%v Id=%v) at N=%v", kv.me, op.ClerkId, op.OpId, m.CommandIndex)
-				}
+				kv.maybeApplyClientOp(op)
 			}
 
 			if kv.gcEnabled && kv.approachGCLimit() {
@@ -35,15 +33,13 @@ func (kv *KVServer) executor() {
 	}
 }
 
-func (kv *KVServer) maybeApplyClientOp(op *Op) bool {
+func (kv *KVServer) maybeApplyClientOp(op *Op) {
 	if !kv.isApplied(op) {
 		kv.applyClientOp(op)
 		kv.maxAppliedOpIdOfClerk[op.ClerkId] = op.OpId
 
 		kv.notify(op)
-		return true
 	}
-	return false
 }
 
 func (kv *KVServer) applyClientOp(op *Op) {
@@ -72,17 +68,7 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	// TODO: remove all logging.
-	if op.OpType == "Get" {
-		println("S%v receives Get (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
-	} else {
-		println("S%v receives PutAppend (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
-	}
-
 	if !kv.isApplied(op) {
-		// warning: it might be reasonable to check here if someone is waiting for the same op.
-		// however, it is not necessary and it does not increase performance as the benchmarking shows.
-
 		if !kv.propose(op) {
 			return ErrWrongLeader, ""
 		}
@@ -95,10 +81,8 @@ func (kv *KVServer) waitUntilAppliedOrTimeout(op *Op) (Err, string) {
 	if kv.isApplied(op) {
 		value := ""
 		if op.OpType == "Get" {
+			// note: the default value, i.e. an empty string, is returned if the key does not exist.
 			value = kv.db[op.Key]
-			println("S%v replies Get (C=%v Id=%v) with Value=%v", kv.me, op.ClerkId, op.OpId, value)
-		} else {
-			println("S%v replies PutAppend (C=%v Id=%v)", kv.me, op.ClerkId, op.OpId)
 		}
 		return OK, value
 	}
