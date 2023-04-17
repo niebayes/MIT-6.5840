@@ -147,7 +147,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// warning: `rf.killed` checking is not necessary.
+	// warning: the `rf.killed` checking is not necessary.
 	isLeader := !rf.killed() && rf.state == Leader
 	if !isLeader {
 		return 0, 0, false
@@ -167,7 +167,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) GetState() (int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// warning: `rf.killed` checking is not necessary.
+	// warning: the `rf.killed` checking is not necessary.
 	return int(rf.term), !rf.killed() && rf.state == Leader
 }
 

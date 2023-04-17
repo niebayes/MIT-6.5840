@@ -42,18 +42,10 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 
 		if rf.lagBehindSnapshot(i) {
 			args := rf.makeInstallSnapshot(i)
-			rf.logger.sendISNP(i, args.Snapshot.Index, args.Snapshot.Term)
 			go rf.sendInstallSnapshot(args)
 
 		} else if forced || rf.hasNewEntries(i) {
 			args := rf.makeAppendEntriesArgs(i)
-
-			if len(args.Entries) > 0 {
-				rf.logger.sendEnts(args.PrevLogIndex, args.PrevLogTerm, args.Entries, i)
-			} else {
-				rf.logger.sendBeat(args.PrevLogIndex, args.PrevLogTerm, i)
-			}
-
 			go rf.sendAppendEntries(args)
 		}
 	}
@@ -94,12 +86,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	if len(args.Entries) > 0 {
-		rf.logger.recvAENT(args)
-	} else {
-		rf.logger.recvHBET(args)
-	}
-
 	reply.From = rf.me
 	reply.To = args.From
 	reply.Term = rf.term
@@ -122,11 +108,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		} else {
 			reply.ConflictTerm, reply.FirstConflictIndex = rf.findFirstConflict(args.PrevLogIndex)
 		}
-
-		rf.logger.rejectEnts(args.From)
 		return
 	}
-	rf.logger.acceptEnts(args.From)
 
 	for i, entry := range args.Entries {
 		if term, err := rf.log.term(entry.Index); err != nil || term != entry.Term {
@@ -168,12 +151,6 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	if len(args.Entries) > 0 {
-		rf.logger.recvAENTRes(reply)
-	} else {
-		rf.logger.recvHBETRes(reply)
-	}
-
 	m := Message{Type: AppendReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term, PrevLogIndex: args.PrevLogIndex}
 	ok, termChanged := rf.checkMessage(m)
 	if termChanged {
@@ -183,9 +160,6 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		return
 	}
 
-	oldNext := rf.peerTrackers[reply.From].nextIndex
-	oldMatch := rf.peerTrackers[reply.From].matchIndex
-
 	switch reply.Err {
 	case Rejected:
 		// do nothing.
@@ -194,12 +168,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 		rf.peerTrackers[reply.From].matchIndex = args.PrevLogIndex + uint64(len(args.Entries))
 		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
 
-		newNext := rf.peerTrackers[reply.From].nextIndex
-		newMatch := rf.peerTrackers[reply.From].matchIndex
-		if newNext != oldNext || newMatch != oldMatch {
-			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
-		}
-
+		// broadcast immediately if the committed index got updated so that follower can
+		// learn the committed index sooner.
 		if rf.maybeCommitMatched(rf.peerTrackers[reply.From].matchIndex) {
 			rf.broadcastAppendEntries(true)
 		}
@@ -214,12 +184,6 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			rf.peerTrackers[reply.From].nextIndex = rf.log.lastIndex() + 1
 		}
 
-		newNext := rf.peerTrackers[reply.From].nextIndex
-		newMatch := rf.peerTrackers[reply.From].matchIndex
-		if newNext != oldNext || newMatch != oldMatch {
-			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
-		}
-
 	case TermNotMatched:
 		newNextIndex := reply.FirstConflictIndex
 		// warning: skip the snapshot index since it cannot conflict if all goes well.
@@ -232,11 +196,5 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 
 		// FIXME: figure out whether the next index is eligible to be advanced.
 		rf.peerTrackers[reply.From].nextIndex = newNextIndex
-
-		newNext := rf.peerTrackers[reply.From].nextIndex
-		newMatch := rf.peerTrackers[reply.From].matchIndex
-		if newNext != oldNext || newMatch != oldMatch {
-			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
-		}
 	}
 }

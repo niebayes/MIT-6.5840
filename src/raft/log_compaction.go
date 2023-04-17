@@ -8,8 +8,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.pullSnap(uint64(index))
-
 	// it's possible there's a pending snapshot received from the leader that is not delivered yet to the
 	// server. The server may meanwhile checkpoint at a lower snapshot index which may produce a stale snapshot.
 	snapshotIndex := uint64(index)
@@ -23,8 +21,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 }
 
 func (rf *Raft) makeInstallSnapshot(to int) *InstallSnapshotArgs {
-	args := new(InstallSnapshotArgs)
-	*args = InstallSnapshotArgs{From: rf.me, To: to, Term: rf.term, Snapshot: rf.log.clonedSnapshot()}
+	args := &InstallSnapshotArgs{From: rf.me, To: to, Term: rf.term, Snapshot: rf.log.clonedSnapshot()}
 	return args
 }
 
@@ -42,8 +39,6 @@ func (rf *Raft) lagBehindSnapshot(to int) bool {
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	rf.logger.recvISNP(args)
 
 	reply.From = rf.me
 	reply.To = args.From
@@ -81,8 +76,6 @@ func (rf *Raft) handleInstallSnapshotReply(args *InstallSnapshotArgs, reply *Ins
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.logger.recvISNPRes(reply)
-
 	m := Message{Type: SnapReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term}
 	ok, termChanged := rf.checkMessage(m)
 	if termChanged {
@@ -93,16 +86,7 @@ func (rf *Raft) handleInstallSnapshotReply(args *InstallSnapshotArgs, reply *Ins
 	}
 
 	if reply.CaughtUp {
-		oldNext := rf.peerTrackers[reply.From].nextIndex
-		oldMatch := rf.peerTrackers[reply.From].matchIndex
-
 		rf.peerTrackers[reply.From].matchIndex = args.Snapshot.Index
 		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
-
-		newNext := rf.peerTrackers[reply.From].nextIndex
-		newMatch := rf.peerTrackers[reply.From].matchIndex
-		if newNext != oldNext || newMatch != oldMatch {
-			rf.logger.updateProgOf(reply.From, oldNext, oldMatch, newNext, newMatch)
-		}
 	}
 }

@@ -22,7 +22,6 @@ func (rf *Raft) committer() {
 
 			rf.mu.Lock()
 			rf.log.hasPendingSnapshot = false
-			rf.logger.pushSnap(snapshot.Index, snapshot.Term)
 
 		} else if newCommittedEntries := rf.log.newCommittedEntries(); len(newCommittedEntries) > 0 {
 			rf.mu.Unlock()

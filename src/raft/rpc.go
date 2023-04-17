@@ -1,6 +1,9 @@
 package raft
 
-import "time"
+import (
+	"log"
+	"time"
+)
 
 type RequestVoteArgs struct {
 	From         int
@@ -118,7 +121,7 @@ func (rf *Raft) checkState(m Message) bool {
 		eligible = rf.state == Leader && rf.term == m.ArgsTerm && rf.lagBehindSnapshot(m.From)
 
 	default:
-		panic("unexpected message type")
+		log.Fatalf("unexpected message type %v", m.Type)
 	}
 
 	// a follower is recommended to reset the election timer to not compete with the acknowledged leader.

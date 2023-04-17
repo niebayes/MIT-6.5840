@@ -2,7 +2,6 @@ package raft
 
 import (
 	"errors"
-	"fmt"
 )
 
 // warning: not used actually.
@@ -44,23 +43,16 @@ func makeLog() Log {
 	log := Log{
 		snapshot:           Snapshot{Data: nil, Index: 0, Term: 0},
 		hasPendingSnapshot: false,
-		entries:            make([]Entry, 1),
+		entries:            []Entry{{Index: 0, Term: 0}}, // use a dummy entry to simplify indexing operations.
 		applied:            0,
 		committed:          0,
 	}
 
-	log.setDummy()
 	return log
 }
 
-func (log *Log) setDummy() {
-	log.entries[0].Index = log.snapshot.Index
-	log.entries[0].Term = log.snapshot.Term
-}
-
 func (log *Log) toArrayIndex(index uint64) uint64 {
-	// warning: an unstable implementation may incur integer underflow.
-	// my implementation is stable now.
+	// warning: an unstable implementation may incur integer underflow. (my implementation is stable now)
 	return index - log.firstIndex()
 }
 
@@ -69,8 +61,6 @@ func (log *Log) firstIndex() uint64 {
 	return log.entries[0].Index
 }
 
-// return the index of the last log entry that has not yet been compacted, if there're any.
-// otherwise, return the snapshot index.
 func (log *Log) lastIndex() uint64 {
 	return log.entries[len(log.entries)-1].Index
 }
@@ -99,30 +89,25 @@ func (log *Log) slice(start, end uint64) []Entry {
 	return log.clone(log.entries[start:end])
 }
 
-func (log *Log) truncateSuffix(index uint64) bool {
+// TODO: rewrite by seems not using the checking.
+func (log *Log) truncateSuffix(index uint64) {
 	if index <= log.firstIndex() || index > log.lastIndex() {
-		return false
+		return
 	}
 
 	index = log.toArrayIndex(index)
 	if len(log.entries[index:]) > 0 {
-		log.logger.discardEnts(log.entries[index:])
 		log.entries = log.entries[:index]
-		return true
 	}
-	return false
 }
 
 func (log *Log) append(entries []Entry) {
 	log.entries = append(log.entries, entries...)
-	log.logger.appendEnts(entries)
 }
 
 func (log *Log) committedTo(index uint64) {
 	if index > log.committed {
-		oldCommitted := log.committed
 		log.committed = index
-		log.logger.updateCommitted(oldCommitted)
 	}
 }
 
@@ -138,9 +123,7 @@ func (log *Log) newCommittedEntries() []Entry {
 
 func (log *Log) appliedTo(index uint64) {
 	if index > log.applied {
-		oldApplied := log.applied
 		log.applied = index
-		log.logger.updateApplied(oldApplied)
 	}
 }
 
@@ -149,20 +132,16 @@ func (log *Log) compactedTo(snapshot Snapshot) {
 	suffixStart := snapshot.Index + 1
 	if suffixStart <= log.lastIndex() {
 		suffixStart = log.toArrayIndex(suffixStart)
-		fmt.Printf("suffixStart=%v FI=%v LI=%v SI=%v\n", suffixStart, log.firstIndex(), log.lastIndex(), snapshot.Index)
 		suffix = log.entries[suffixStart:]
 	}
 
 	log.entries = append(make([]Entry, 1), suffix...)
 	log.snapshot = snapshot
-	log.setDummy()
+	// set the dummy entry.
+	log.entries[0] = Entry{Index: snapshot.Index, Term: snapshot.Term}
 
 	log.committedTo(log.snapshot.Index)
 	log.appliedTo(log.snapshot.Index)
-
-	lastLogIndex := log.lastIndex()
-	lastLogTerm, _ := log.term(lastLogIndex)
-	log.logger.compactedTo(lastLogIndex, lastLogTerm)
 }
 
 // FIXME: doubt the clone is necessary for working around races.

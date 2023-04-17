@@ -20,56 +20,45 @@ func (rf *Raft) resetElectionTimer() {
 }
 
 func (rf *Raft) becomeFollower(term uint64) bool {
-	termChanged := false
-	oldTerm := rf.term
-
+	rf.state = Follower
 	if term > rf.term {
 		rf.term = term
 		rf.votedTo = None
-		termChanged = true
+		return true
 	}
-
-	if rf.state != Follower {
-		rf.state = Follower
-		rf.logger.stateToFollower(oldTerm)
-	}
-
-	return termChanged
+	return false
 }
 
 func (rf *Raft) becomeCandidate() {
 	defer rf.persist()
+	rf.state = Candidate
 	rf.term++
 	rf.votedMe = make([]bool, len(rf.peers))
 	rf.votedTo = rf.me
-	rf.logger.stateToCandidate()
-	rf.state = Candidate
 	rf.resetElectionTimer()
 }
 
 func (rf *Raft) becomeLeader() {
-	rf.resetTrackedIndexes()
-	rf.logger.stateToLeader()
 	rf.state = Leader
+	rf.resetTrackedIndexes()
 }
 
 func (rf *Raft) makeRequestVoteArgs(to int) *RequestVoteArgs {
-	args := new(RequestVoteArgs)
 	lastLogIndex := rf.log.lastIndex()
 	lastLogTerm, _ := rf.log.term(lastLogIndex)
-	*args = RequestVoteArgs{From: rf.me, To: to, Term: rf.term, LastLogIndex: lastLogIndex, LastLogTerm: lastLogTerm}
+	args := &RequestVoteArgs{From: rf.me, To: to, Term: rf.term, LastLogIndex: lastLogIndex, LastLogTerm: lastLogTerm}
 	return args
 }
 
 func (rf *Raft) sendRequestVote(args *RequestVoteArgs) {
 	reply := RequestVoteReply{}
+	// note: `Call` has an internal timeout mechanism.
 	if ok := rf.peers[args.To].Call("Raft.RequestVote", args, &reply); ok {
 		rf.handleRequestVoteReply(args, &reply)
 	}
 }
 
 func (rf *Raft) broadcastRequestVote() {
-	rf.logger.bcastRVOT()
 	for i := range rf.peers {
 		if i != rf.me {
 			args := rf.makeRequestVoteArgs(i)
@@ -84,12 +73,9 @@ func (rf *Raft) eligibleToGrantVote(candidateLastLogIndex, candidateLastLogTerm 
 	return candidateLastLogTerm > lastLogTerm || (candidateLastLogTerm == lastLogTerm && candidateLastLogIndex >= lastLogIndex)
 }
 
-// RequestVote request handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	rf.logger.recvRVOT(args)
 
 	reply.From = rf.me
 	reply.To = args.From
@@ -110,13 +96,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedTo = args.From
 		rf.resetElectionTimer()
 		reply.Voted = true
-
-		rf.logger.voteTo(args.From)
-
-	} else {
-		lastLogIndex := rf.log.lastIndex()
-		lastLogTerm, _ := rf.log.term(lastLogIndex)
-		rf.logger.rejectVoteTo(args.From, args.LastLogIndex, args.LastLogTerm, lastLogIndex, lastLogTerm)
 	}
 }
 
@@ -127,17 +106,12 @@ func (rf *Raft) receivedMajorityVotes() bool {
 			votes++
 		}
 	}
-	if 2*votes > len(rf.peers) {
-		rf.logger.recvVoteQuorum()
-	}
 	return 2*votes > len(rf.peers)
 }
 
 func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	rf.logger.recvRVOTRes(reply)
 
 	m := Message{Type: VoteReply, From: reply.From, Term: reply.Term, ArgsTerm: args.Term}
 	ok, termChanged := rf.checkMessage(m)
