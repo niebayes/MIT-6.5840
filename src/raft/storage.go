@@ -30,7 +30,9 @@ func (rf *Raft) readPersist(data []byte) {
 		panic("failed to decode some fields")
 	}
 
-	rf.log.compactedTo(Snapshot{Data: nil, Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
+	// warning: on recovery, raft has to also restore the snapshot.
+	// that's because a leader might need to send a snapshot to followers after restarted.
+	rf.log.compactedTo(Snapshot{Data: rf.persister.ReadSnapshot(), Index: rf.log.snapshot.Index, Term: rf.log.snapshot.Term})
 
 	fmt.Printf("N%v rs (T:%v V:%v LI:%v CI:%v AI:%v SI:%v ST:%v)\n", rf.me, rf.term, rf.votedTo, rf.log.lastIndex(), rf.log.committed, rf.log.applied, rf.log.snapshot.Index, rf.log.snapshot.Term)
 	rf.logger.restore()
