@@ -88,5 +88,12 @@ func (rf *Raft) handleInstallSnapshotReply(args *InstallSnapshotArgs, reply *Ins
 	if reply.CaughtUp {
 		rf.peerTrackers[reply.From].matchIndex = args.Snapshot.Index
 		rf.peerTrackers[reply.From].nextIndex = rf.peerTrackers[reply.From].matchIndex + 1
+
+		// note: there must already have a majority of followers whose match index is greater than or equal to
+		// the snapshot index. Otherwise, the snapshot won't be generated.
+		// hence, the update of the match index of a lag-behind follower won't drive the update
+		// of the committed index. Hence, there's no need to call `maybeCommitMatched`.
+		// the forcing broadcast AppendEntries is used to make lag-behind followers catch up quickly.
+		rf.broadcastAppendEntries(true)
 	}
 }

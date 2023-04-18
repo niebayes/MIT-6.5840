@@ -1,5 +1,67 @@
 # Lab3: Fault-tolerant Key-Value Service
 
+### 如何通过 `TestSpeed3A` 测试？
+
+leader 在收到 server 层的 operation 后，会把它 wrap 为一个 log entry。在我之前的实现中，这个 log entry 会在下次 heartbeat timeout 时，才会被发送给 followers。这就使得 raft 层的同步 throughput 实际上与 heartbeat timeout 一致。`TestSpeed3A` 要求的最低 throughput 为每 33 ms commit 一个 log entry，然而我的 heartbeat timeout 为 150 ms，因此过不了测试。这个 heartbeat timeout 是一个比较合理的数值。另一方面，测试要求 heartbeat timeout 不能低于 100 ms，因此不能通过降低 heartbeat timeout 来强行过这个测试。
+
+通过以上分析知，leader 收到 server 层的 operation 以后，实际上可以立刻强制 broadcast append entries，如此就可以提高 throughput。不仅如此，当 leader 收到 append entries reply 后，如果检测到 match index 提高乃至 committed index 因此而提高，那么也可以立即 broadcast append entries，以让 followers 更快地 learn committed index。还有一个可能被忽略的点是，leader 在收到 install snapshot reply 后，如果 follower 成功 install snapshot 了，那么 leader 也可以立即 broadcast append entries，以让 followers 更快地 catch up。
+
+注意，在不加 `-race` 的情况下，执行这个测试的平均时间大概在 1s 左右。如果加了 `-race`，执行时间大概在 40s 左右，且 throughput 平均只有 35 ms 左右，不满足最低要求 33 ms。也就是说，如果加了 `-race`，我的实现是过不了这个测试的。
+
+### executor 与 service handler 之间的通知机制应该如何设计？
+
+在我的实现中，server 层有一个独立的 executor 线程，它负责通过 applyCh 从 raft 层拿 committed commands 或者 snapshots，然后 execute 它们。当一个 operation 被 execute 之后，executor 再通知可能正在等待的 service handlers。service handlers 收到通知之后，再回复 clients。
+
+在讨论通知机制如何时间之前，我们先说明一些必要的事项。最首要的是，以下的讨论建立在允许 follower accept 和 reply clients 的基础上。其次，我们无法设计一种有效的机制，以避免重复 propose 同一个 request。因为即使 propose 了一个 request，raft 层也不可能保证这个 request 会被 committed。例如一个被 partitioned 的 old leader propose 了这个 request，partition 修复之后，这个 old leader 的 conflict log entries 可能会被 discard。也就是说，当 server 检测到某个 request 未被 request 时，它别无选择而只能 propose 它，不管它是不是 dup request。最后注意，这里的通知机制只与单个 server 有关，因此我们只需要考虑同一个 server 接收 requests 的几种场景：
+
+- server 通过 max applied op id 检测到一个已经被 executed 的 dup request，server 立即 reply，不需要通知机制。
+- leader 收到一些未被 applied 的 requests，则会在不同的 index 处 propose 这些 requests。
+    - 这些 requests 来自不同的 clients：这是非常常见的情况，此时，clerk id 不同、op id 有可能相同、index 不同。设该情况为 A。
+    - 这些 requests 来自同一个 client：
+        - 这些 requests 可能为同一个 request，即它们是 dup requests，此时，clerk id 相同、op id 相同、index 不同。设该情况为 B。
+        - 这些 requests 为不同的 requests。
+            - leader 收到了某个 client 的属于同一个 request 的多个 dup requests，leader propose 了它们。leader 随后 execute 了这些 dup requests 中最先被 propose 的那个，然后进行了回复。client 收到回复以后，发来了第二个 request。此时，clerk id 相同、op id 有些相同有些不同、index 不同。设该情况为 C。
+            - 例如一个 server 之前是 follower 时收到了来自某个 client 的一个 request，当时的 leader 已经 execute 并 reply 了这个 request。之后，这个 follower 成为了新的 leader，于是收到了来自同一个 client 的新的 request。此时，clerk id 相同、op id 不同、有些 requests 有 index 而有些没有。设该情况为 D。
+- follower 收到一些未被 applied 的 requests。由于 follower 不能 propose，因此都不会有 index。除此之外，情况与 leader 一致。
+
+最简单的通知机制当然是 sleep polling。server 会为每个 clerk 维护一个 max applied op id 查询表，当 executor 执行一个 op 以后，会更新这个查询表。service handler 会在一定的时间内，以一定的时间间隔 poll 这个查询表。如果它发现 max applied op id ≥ 自己所等待的那个 op 的 op id，那么便知道这个 op 被 execute 了。这种方法是容易实现，也最不容易出错的，并且它很显然能够应对上面所述的所有情况。
+
+但它的效率不是很高（虽然也不低），因为它会以一定的时间间隔 poll，而 poll 时一定需要拿锁（说实话，这里不拿锁也没事，只是会有 race 错误）。并且如果一个 op 恰巧在本次 poll 之后被 execute 了，那么 service handler 最早才能在下次 poll 时发现。如果 poll interval 设置得比较大，那么显然会降低效率。
+
+另一个使用的比较多的方法是 channel。service handler 在接收到 request 后，为这个 request 注册一个 channel，然后 service handler 就 block receive from channel。executor 执行这个 request 之后，拿到这个 channel，send to channel 以通知 service handler。为了使用基于 channel 的通知机制，我们需要考虑这么几个问题：
+
+- 注册和获取 channel 时使用什么作为 key：
+    - 只使用 op id：根本不可能，因为其无法唯一标识一个 request。
+    - 只使用 clerk id：对于情况 B、C、D，无法唯一地标识一个 request。
+    - 使用 clerk id 和 op id：对于情况 B、C，无法唯一地标识一个 request。
+    - 使用 raft 层返回的 log index 作为 key：对于情况 D 以及 follower 相关的情况，由于没有 index，因此无法使用。注意，如果不允许 follower accept 和 reply clients，那么使用 index 是可行的。
+- 如何解决 channel 的 block 问题：
+    - 由于 service handler 等待时不会拿锁，因此可能会出现这么一种情况：service handler timeout 了，因此准备拿锁以获取之前注册的 channel。就在 service handler 拿到锁之前，executor 拿到锁 execute 了这个 request，然后获取之前注册的 channel。executor 会顺利拿到这个 channel，然后尝试 send to channel。由于此时 service handler 已经没有在 receive from channel，因此这个 send to channel 会 block。我并没有想到可行的方法来解决这个问题。
+- 如何 close channel？channel 是一种有限资源，在用完一个 channel 后，需要及时销毁它，以回收资源。
+    - 让 service handler close channel：一种做法是，使用 Go 的 select 语句，为 channel 添加 timeout 机制。当 timeout 之后，拿锁，获取之前注册的 channel，然后同步或异步地 close channel。使用 channel 的一个基本准则是只让 sender 一方去 close channel。显然，让 service handler 去 close channel 不是一个推荐的做法。
+    - 让 executor close channel：应该是可行的，虽然我没有验证过。
+
+考虑到 sleep polling 的效率不高，以及使用 channel 时需要考虑的各种问题，我选择的是 condition variable 这种通知机制。简要而言，service handler 在 propose 之后，会 sleep wait，直到 executor 通知它这个 request 已经被 execute 了。对于这种方法，我们也需要考虑一些问题。
+
+首先，我们需要设计一种 timeout 机制。对于 channel 而言，timeout 机制可以通过 select 语句轻易实现，然而对于 condition variable，timeout 机制就比较复杂。在我的实现中，每当 service handler 注册或获取一个 condition variable 时，就会立即启动一个 alarm 线程。这个线程会在等待一段时间后，对 condition variable 进行一次 broadcast，以唤醒正在等待的 service handlers。为什么是 broadcast 而不是 signal 呢？因为 signal 的唤醒对象是不确定的（至少我不知道唤醒的顺对象和顺序是如何确定），不如使用 broadcast 来全部唤醒。
+
+另一个需要考虑的问题就是注册和获取 condition variable 时应该使用什么作为 key。这个问题，我们在关于 channel 通知机制的讨论中，也提及过。在之前的讨论中，我们判断某种方法是否可行，其依据是该方法是否可以在各种情况中唯一地标识一个 request。为什么需要唯一标识呢？这是因为 Go 内置的 channel 只能用来 1-to-1 通信，而有些情况需要 1-to-N 通信。恰巧，condition variable 是一个非常适合进行 1-to-N 通信的机制。因此，我们的判断依据也不再是某种方法是否可以唯一地标识一个 request，而是它是否能够与 condition variable 通知机制良好地合作。
+
+经分析，我发现使用 clerk id 作为 key 是一种可行的方法。下面就分情况讨论：
+
+- 情况 A：由于 clerk id 不同，因此 clerk id 可以唯一地标识 requests，故可行。
+- 情况 B：虽然由于 clerk id 相同，broadcast condition variable 时会唤醒所有正在等待的 service handlers，但这是一个可以接受的行为。因为这些 requests 实质上都为同一个 requests，那么只要有一个 service handler 回复了，client 就能收到 response。当然，由于网络原因，有些 response 可能会被 discard。如果我们让每个 service handler 都等待 applied 后再进行回复，确实可以更好地应对 unreliable network。但至少，这样的唤醒方式是可接受的。
+- 情况 C：由于 clerk id 相同，当等待 index 最低的那个 request 的 service handler 被唤醒时，正在等待 index 较高的那些 requests 的 service handlers 也会被唤醒。这样的唤醒显然是不可接受的。为了避免这样的唤醒，我为每个 condition variable 维护了一个 max registered op id。当注册或获取 condition variable 时，更新这个 max registered op id。不管是 alarm 线程还是 executor 线程，当执行唤醒操作之后，会检查自己的 op id （在创建 alarm 线程时会传入这个参数；executor 线程在 execute op 时自然可以拿到 op id）是否为 max registered op id。如果是，才允许在注册表删除这个 condition variable。当正在等待 index 较高的那些 requests 的 service handlers 被唤醒时，它们会检查注册表中是否还有这个 condition variable，如果没有则说明自己就是此次被唤醒的对象，因此会中止 sleep wait。反之，它们会继续 sleep wait。
+- 情况 D：同对情况 C 的处理。
+
+综上，使用 condition variable 作为通知机制，同时使用 clerk id 作为注册和获取 condition variable 的 key，是一种可行的做法。
+
+特别要说的是，使用 clerk id 作为 key，对资源的消耗是最小的。设同时最多有 N 个 clients，那么一个 server 同时最多只需要维护 N 个用于通知的 condition variables。
+
+关于如何正确地关闭 Go 的 channel，参考：
+
+[How to Gracefully Close Channels -Go 101](https://go101.org/article/channel-closing.html)
+
 ### server 层与 raft 层的耦合关系是怎样的？
 
 在一个分布式系统中，raft 或者其它 consensus 算法通常是被实现为一个共识库，被应用层所调用。应用层把一个需要共识的东西，例如 operation，传给共识库。共识库执行共识操作，然后告知应用层某个 operation 已经被成功共识了。此时应用层就可以放心大胆地去 execute 这个 operation。
@@ -90,23 +152,74 @@ lab3 partB 的很多测试都是共用 `GenericTest` 这个测试函数，根据
 
 ### 如何保证 `linearizability` ？
 
-首先说明一下，什么是线性一致性。
+首先对一致性进行简要的说明。一致性是一个 specification（说明，或称要求），指的是对于不同的 clients，service 的 view 应该是怎样的。形象一点的说法，多个人去观察同一个物体，他们眼中的这个物体应该是怎样的。
 
-参考：
+在一个单机单线程系统中，我们可以很简单地确认系统在任意时刻的状态。在一个单机多线程系统中，由于并发、并行，我们比较难确认系统在任意时刻的状态。而对于一个分布式系统，考虑到 unreliable network, partial failures, async clock, cache, replicas 等因素，要完全确认系统在任意时刻的状态，是一件不可能的事。
 
-[MIT 6.824 lecture: Linearizability](https://pdos.csail.mit.edu/6.824/notes/l-linearizability.txt)
+在一个不确定的系统之上，构建自己的应用、写程序，很难保证正确性。因此，对于分布式系统，我们通常会要求它们满足某种一致性要求（或称模型），使得它们符合某些业务的要求、以及使得开发者与分布式系统的交互更容易。
 
-关于线性一致性，需要从 client 和 server 两个角度去理解。
+一些一致性模型为：
 
-- 对于 client：当前 op 必须发生在上一个 op 之后。注意，这里的“之后”并不代表“紧邻”。
-- 对于 server：在 execute op 时保证原子性，即不会在没有并发控制的情况同时 execute 两个 op。
+- eventual consistency
+- causal consistency
+- serializability
+- sequential consistency
+- linearizability
 
-在实现时，常用的方法为：
+满足不同一致性模型的分布式系统，在 performance, convenience, robustness 方面的表现不一样。需要根据业务需求和对程序员的友好程度进行选取。
 
-- 对于 client：为 request 的 unique tag 定义一个偏序关系。例如对于 clerk id 和 op id 构成的 request tag，clerk id 可以是随机生成的，op id 则需要是严格单调分配的（可以是严格单调递增，也可以是严格单调递减）。
-- 对于 server：
-    - 在 apply op 时进行 concurrency control，例如加锁。
-    - 为每个已知的 client 维护 max applied op id，拒绝 apply 小于或等于 max applied op id 的 ops。这也是为什么要求 op id 是严格单调分配的。
+现在对线性一致性进行简要的说明。对于每个 client 所发送的每一个相同的 request，有 invocation time 和 response time，前者表示 client 第一次发送 request 的时间，后者表示 client 第一次收到 response 的时间。注意这里的 response 表示的是收到正确的 response。对于 PutAppend，为 OK。对于 Get，为 value 或者 ErrNoKey。对于 service 而言，不可能知道某个 request 被 execute 的确切时间，因此只能认为这个 request 在 invocation time 与 response time 之间的某个时间点被 execute。对于每一个 key，如果所有 clients 所被执行的、关于这个 key 的 operations，各自能够在 invocation time 和 response time 之间找到唯一一个执行点，然后把这些执行点串起来，能够形成一条随时间增长的、没有任何回路的直线，我们就称关于这个 key 的、所有 clients 所被执行的 operations 是 linearizable 的。这些 operations 统称为关于这个 key 的 history operations，或简称 history。如果每个 key 的 history 都是 linearizable 的，我们就说这个分布式系统在本次运行过程中是 linearizable 的。
+
+以上只是告诉我们，当有了 history 时，如何判断 history 乃至整个系统的运行是否是 linearizable 的。换句话说，以上只是告诉了我们验证 linearizability 的方法。那么我们应该怎么实现一个系统，使得它满足 linearizability 呢？在 raft 论文中，对于 linearizability，有这样一句话：`every operation appears to execute atomically and instantaneously at some point between the invocation and response`。这句话实际上就告诉我们应该保证两个 properties：each operation executes atomically, each operation executes instantaneously。当这两个 properties 得到保证时，系统就是一个 linearizable 系统。
+
+把这句话用 client 的角度重述，有：对于一个 client 在时刻 t1 发出、时刻 t2 收到 response 的 Get operation，Get 的 value 中应该包含所有在 t1 时刻之前被 execute 的 Put, Append。这里的包含意为：这些 Put, Append 只会在这个 value 中出现唯一的一次。也就是说，如果一个 Put, Append 在此之前被 execute 了，它必须出现一次，不能不出现，不能出现多次。这样的重述就是我们一般情况下进行 linearizability 判断的纲领。通过这个纲领，我们可以回答以下两个问题：
+
+为什么需要保证 `atomically` ？假设 server 几乎同时收到了来自不同 clients 的、关于同一个 key 的两个 Appends，如果没有并发控制，那么其中一个 Appends 可能 lost，即发生很常见的 lost write 或称 lost update 并发错误。在 clients 收到两个 Appends 的 responses 后，某个 client 又发送了一个 Get。如果这是一个 linearizable 系统，client 应该看到之前的两个 Appends，因为这两个 Appends 的 response time 都在 Get 的 invocation time 之前，则它们的 execute time 必定都在 Get 的 execute time 之前。但是由于有一个 Append 丢失了，这个 Get 拿到的 value 中实际上只包含一个 Append。这就不满足 linearizability。
+
+为什么需要保证 `instantaneously` ？instantaneously 的意思是，每个 operation 有且仅有唯一的一个执行点，不能是 0 个，也不能是多个，只能是 1 个。换句话说，当某个 client 收到某个 request 的 response 时，client 可以得到 server 执行这个 request exactly once 的保证。考虑一个保证 exactly once 语义的系统，client 发送一个 Append 给 server，server 由于某些原因执行了这个 Append 两次。当 client 收到 response 后，它又发出了一个 Get。理论上，这个 Get 的 value 应该只包含一个 Append，但实际上其中包含了两个 Appends。这也违反了 linearizability。
+
+讨论了这么多，现在就具体到如何为这个 lab 实现一个 linearizable key-value service。对于 atomically，最简单的方法就是让 server apply operation 到 state machine 时，进行加锁。对于 instantaneously，即 exactly once 语义，维护一个关于 operations 的去重表。去重表的具体实现方法不赘述。
+
+### 为什么不需要为 Get operation cache value？
+
+在有些实现中，当 server apply Get operation 时，会把此时拿到的 value 记录在一个数据结构中，待之后通知 service handler 这个 operation 已经 applied 时，交付给 service handler，最终发给 client。
+
+有些人认为不这样做，会破坏 linearizability。实际上，这样的 cache value for Get operations 是不会破坏 linearizability 的。如果不 cache value，那么当 service handler 得到 operation 已经被 applied 的通知后，service handler 会在加锁的情况下执行 Get operation，然后回复 client。显然，与 cache value 的做法对比，虽然 Get operation 的执行时间点往后延了一点，但是 atomically 和 instantaneously 两个 property 依然得到满足。
+
+是的，非常有可能在 apply Get operation 时拿到的 value 与 service handler 执行 Get operation 拿到的 value 是不一致的。比如在这个 time gap，server apply 了来自其它 clients 的 Put, Append。甚至有可能由于 dup requests，多个 service handler 在不同的时间点执行同一个 Get operation。但这些都不影响线性一致性。
+
+当任意一个 service handler 执行 Get operation 时，client 有且仅有两个状态：
+
+- client 已经收到了这个 Get operation 的 reply：那么这次执行Get operation 拿到什么 value 无所谓，因为 client 已经不需要了。
+- client 还没有收到这个 Get operation 的 reply：由于没有收到过 reply，此次执行的 Get operation 所拿到的 value 就是 client 将要看到的那个 value。
+
+也就是说，从 client 的角度来看，它自始至终只会看到唯一的一个 value。并且这个 value 必定是包含了所有之前被 execute 的 Put, Append。如果只有一个 client，那么这个 value 就会包含所有由这个 client 所发出的 Put, Append。如果有 concurrent clients，那么这个 value 就会包含所有在之前被 execute 的 Put, Append。从这个 client 看来，这个 Get operation 就是只 execute 了一次，因此 instantaneously 得到满足。
+
+### 为什么 follower 也可以 accept 和 reply clients？
+
+这也是一个与 linearizability 相关的问题。注意，依然只有 leader 能够 propose requests 给 raft，但是 follower 也可以 accept 和 reply clients。
+
+在有些实现中，follower 会 reject client requests。不仅如此，如果 server 收到 requests 是 leader，但是回复 clients 之前不再是 leader 或者 leader term 改变了，server 也不会 reply clients。
+
+实际上，允许 follower accept 和 reply clients，并不会影响 linearizability，只要我们保证 follower 当且仅当检测到这个 request 已经被 apply 了就行。对于 Put, Append，显然 leader 和 follower 都可以 reply clients。对于一个 Get operation，考虑 leader 执行的时刻为 X，但是由于网络原因 client 并没有收到 leader 的 reply。随后 client 可能把 request 重发给某个 follower，follower 收到之后检测到这个 request 已经被 apply 了，于是 service handler 自行执行 Get operation，而不经过 raft 层。设这个执行的时刻为 Y。
+
+很有可能，在 (X, Y) 这段时间内，server 执行了其它 clients 发来的 requests，导致两次 operation 拿到的 value 不一致。但是这并不影响 linearizability，这个我们已经在 `为什么不需要为 Get operation cache value？` 中讨论过了。
+
+设想这样一个场景，leader 在执行 Get operation 后、回复 clients 之前 crash 了，那么 cached 的 value 也没了，因为通常不会持久化 cached value。那么以后不管是 leader 还是 follower 收到同一个重发的 request，它们再次执行这个 Get operation 时，所拿到的 value 也非常可能与第一次拿到的 value 不一致。这种情况是我们无法避免的，而这种情况与 follower 在 leader 之后再次执行 Get operation 相比，本质上是相同的。从另一方面来说，Get operations 对于 state machine 的 state 而言，是幂等的，即执行任意多次某个 Get operation，都不会改变 state machine 的 state。
+
+思考：那么能不能让 follower 在尚未检测到 Get operation 已经被 apply 的情况下，也回复 clients 呢？
+
+这是不行的，会破坏线性一致性。考虑一个 client 在发送 Put 且拿到 response 之后，又发送了一个 Get。如果系统是 linearizable 的，且假设 server 在此期间没有 execute 其它 operations，那么这个 Get 一定会拿到之前 Put 的 value。假设此时是一个 lag behind 的 follower 拿到这个 Get operation，由于它还没有 execute 之前的那个 Put operation，因此 Get 所拿到的 value 并不是之前 Put 的 value。显然，这明显破坏了线性一致性，因为本应该 execute exactly once 的 Put operation，在 client 的 view 中实际上并没有被 execute。
+
+实际上，一个 linearizable 系统通常会有一个严格的 serial component，只要一个 operation 在被 reply clients 之前进入了这个 serial component，那么线性一致性就可以被保证。在我的实现中，所有的 operations，不管是 Put, Append，还是 Get，它们都被传给 raft 层进行共识。而 raft 层维护了一个 consistent 的 replicated log，由于 replicated log 可以被抽象为一个严格有序的数组，因此执行这些 operations 都不会破坏线性一致性。反之，如果 Get operation 不经过 raft 层就被执行，则会破坏线性一致性。
+
+关于线性一致性的定义，参考：
+
+[MIT 6.824 Linearizability](https://pdos.csail.mit.edu/6.824/notes/l-linearizability.txt)
+
+工业界，为了提高 throughput，通常不会让 Get operations 经过 raft 层。这就需要其它手段来保证线性一致性。参考：
+
+[How TiKV Uses "Lease Read" to Guarantee High Performances, Strong Consistency and Linearizability | PingCAP](https://www.pingcap.com/blog/lease-read/)
 
 ### 如何解决 `slicing out of bound` 错误？
 
