@@ -41,7 +41,7 @@ func (rf *Raft) broadcastAppendEntries(forced bool) {
 		}
 
 		if rf.lagBehindSnapshot(i) {
-			args := rf.makeInstallSnapshot(i)
+			args := rf.makeInstallSnapshotArgs(i)
 			go rf.sendInstallSnapshot(args)
 
 		} else if forced || rf.hasNewEntries(i) {

@@ -20,7 +20,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.persist()
 }
 
-func (rf *Raft) makeInstallSnapshot(to int) *InstallSnapshotArgs {
+func (rf *Raft) makeInstallSnapshotArgs(to int) *InstallSnapshotArgs {
 	args := &InstallSnapshotArgs{From: rf.me, To: to, Term: rf.term, Snapshot: rf.log.clonedSnapshot()}
 	return args
 }

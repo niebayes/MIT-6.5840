@@ -89,7 +89,8 @@ func (log *Log) slice(start, end uint64) []Entry {
 	return log.clone(log.entries[start:end])
 }
 
-// TODO: rewrite by seems not using the checking.
+// FIXME: doubt the out of bound checking is necessary.
+// seems only the `index > log.lastIndex()` checking is necessary.
 func (log *Log) truncateSuffix(index uint64) {
 	if index <= log.firstIndex() || index > log.lastIndex() {
 		return
@@ -114,6 +115,7 @@ func (log *Log) committedTo(index uint64) {
 func (log *Log) newCommittedEntries() []Entry {
 	start := log.toArrayIndex(log.applied + 1)
 	end := log.toArrayIndex(log.committed + 1)
+	// FIXME: replace with `start == end` and verify it.
 	if start >= end {
 		// note: len(nil slice) == 0.
 		return nil
@@ -122,6 +124,7 @@ func (log *Log) newCommittedEntries() []Entry {
 }
 
 func (log *Log) appliedTo(index uint64) {
+	// FIXME: doubt the checking is necessary.
 	if index > log.applied {
 		log.applied = index
 	}

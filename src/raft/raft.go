@@ -101,7 +101,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.state = Follower
 	rf.resetElectionTimer()
 	rf.heartbeatTimeout = heartbeatTimeout
-	rf.logger.stateToFollower(rf.term)
 
 	go rf.ticker()
 	go rf.committer()

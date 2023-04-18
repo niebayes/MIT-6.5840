@@ -99,7 +99,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 }
 
-func (rf *Raft) receivedMajorityVotes() bool {
+func (rf *Raft) quorumVoted() bool {
 	votes := 1
 	for i, votedMe := range rf.votedMe {
 		if i != rf.me && votedMe {
@@ -124,7 +124,7 @@ func (rf *Raft) handleRequestVoteReply(args *RequestVoteArgs, reply *RequestVote
 
 	if reply.Voted {
 		rf.votedMe[reply.From] = true
-		if rf.receivedMajorityVotes() {
+		if rf.quorumVoted() {
 			rf.becomeLeader()
 		}
 	}
