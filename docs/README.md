@@ -2,7 +2,7 @@
 
 ### Figure8 讲了什么？如何规避 figure8 所展示的问题
 
-![Untitled](docs/README_assets/Untitled.png)
+![Untitled](README_assets/Untitled.png)
 
 首先 figure 8 讲了一个什么问题？它假设了这样一个场景：
 
