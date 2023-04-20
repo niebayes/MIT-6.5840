@@ -1,8 +1,40 @@
 # README
 
+本代码实现了 MIT 6.5840（原 MIT 6.824）分布式系统课程 2023 年版本的 Lab2 Raft 和 Lab3 Fault-tolerant Key-Value Service。关于 Lab4 Sharded Key-Value Service，参考我在 MIT 6.824 2015 Paxos 版本中的实现，其也在总计 30000 次测试中无错误。
+
+[https://github.com/niebayes/MIT-6-824-Paxos](https://github.com/niebayes/MIT-6-824-Paxos)
+
+本代码总共经过 30000 余次测试，代码的正确性和鲁棒性有一定的保证。执行 Lab3 PartB 最后一个测试 10000 次（带 `-race` ）的结果如下。注：执行时间范围偏差较大是因为测试时电脑休眠了几次，导致测试脚本统计出现了问题。
+
+![Untitled](README_assets/test.png)
+
+在 `src/raft` 和 `src/kvraft` 文件夹下均配置有 `run_all_tests.sh` 测试脚本。在终端中执行该脚本，即可启动对应 Lab 的测试。
+
+在 lab 的实现过程中，我遇到了很多问题和 bug，对它们也有很多思考。下面我主要以讨论的方式对它们进行描述和总结。
+
+关于 Lab 的一些 instructions，参考：
+
+[https://pdos.csail.mit.edu/6.824/notes/l-raft.txt](https://pdos.csail.mit.edu/6.824/notes/l-raft.txt)
+
+[https://pdos.csail.mit.edu/6.824/notes/l-raft2.txt](https://pdos.csail.mit.edu/6.824/notes/l-raft2.txt)
+
+关于 Raft 和 Lab 的一些 FAQ，参考：
+
+[https://pdos.csail.mit.edu/6.824/papers/raft-faq.txt](https://pdos.csail.mit.edu/6.824/papers/raft-faq.txt)
+
+[https://pdos.csail.mit.edu/6.824/papers/raft2-faq.txt](https://pdos.csail.mit.edu/6.824/papers/raft2-faq.txt)
+
+一个 TA 写的关于 lab 的 guidance，参考：
+
+[https://thesquareplanet.com/blog/students-guide-to-raft/](https://thesquareplanet.com/blog/students-guide-to-raft/)
+
+关于如何更好地输出和分析日志，参考：
+
+[https://blog.josejg.com/debugging-pretty/](https://blog.josejg.com/debugging-pretty/)
+
 ### Figure8 讲了什么？如何规避 figure8 所展示的问题
 
-![Untitled](README_assets/Untitled.png)
+![Untitled](README_assets/figure8.png)
 
 首先 figure 8 讲了一个什么问题？它假设了这样一个场景：
 
@@ -20,6 +52,112 @@
 考虑之前是如何 advance committed index 的：判断一个 log entry 是否被 commit，leader 需要遍历所有 followers 的 match index。如果它发现对于一个 N > committed index 的数，大多数 match index 也大于或等于它，即 quorum(match indexes) ≥ N，那么就把 committed index 设置到 N。
 
 现在，我们只需要额外加一个条件判断，即 `quorum(match indexes) >= N && entry.Term == leader term` ，也就是让一个 leader 只能 commit 自己 term 的 log entries。
+
+## 如何实现 log replication？
+
+这里我们讨论如何 handle log replication 过程中发现的 conflict。
+
+在 follower handle append entries request 时，有两个地方可能引发 conflict。一个是 log consistency check。这个 check 只与 leader 发过来的 prev log index、prev log term、以及 follower log 有关，它不涉及到 append entries request 中携带的 leader log entries。关于 log consistency check 以及与之相关的 accelerated log backtracking，之后会有详细的讨论。我们要明确的是，当且仅当 log consistency check 通过了，即确认 leader 与 follower 的 log 在 prev log index 及之前都是一致的情况下，follower 才会考虑 install leader 发送过来的 log entries。否则，follower 会在回复对应的 log consistency check fail 的原因后，中止 handling request。
+
+另一个可能引发 conflict 的地方，就是当 follower 尝试 install leader log entries 时。因为 log consistency check 只保证 log prefix 是一致的，并不保证 log suffix 也是一致的。此时，follower 应一切以 leader 为准。也就是说，一旦发现 follower 的某些 log entry 的 term 与 leader 发送过来的不一致，则需要将这个 log entry 及之后的所有的 log entry 都替换为 leader 的 log entries。此即 conflicts。如果没有发现 conflict，则 follower 不需要对自己的 log 做任何操作。
+
+假设 leader 发送过来的 log entries 中的最后一个 log entry 的 index 为 X。在 log consistency check 成功及 follower install log entries 完毕之后，我们保证 follower 那些 index 在 X 及之前的 log entries 都与 leader 的一致。此时，follower 就可以根据 index X 以及 leader 发送过来的 committed index 中的较小值，去尝试更新 follower 的 committed index。只能根据较小值，是因为 leader 发送过来的 log entries 的一部分 log suffix 可能尚未被 committed。
+
+关于 leader accelerated log backtracking，或称 follower catching up quickly，很多 raft 的实现都不一样。我实现的是 lab spec 说的方法，具体为：
+
+- follower：
+    - 如果检测到 follower log 在 prev log index 处没有 log entry，则将 reply 设为 index not matched，表示 follower 的 log 太短。同时，follower 把 last log index 返回给 leader。设该情况为 FA。
+    - 如果检测到 follower log 在 prev log index 处有 log entry，但是 log term 与 prev log term 不一致，则将 reply 设为 term not matched，表示发生了 term conflict。同时，follower 会在 log 中找第一个 term 为 prev log term 的 log entry，并将这个 log entry 的 log index 作为 first conflict index 返回给 leader。设该情况为 FB。
+    - 将 reply 设为 matched，表示 follower 的 log 与 leader 的 log 在 prev log index 及之前都是 matched。follower 之后需要选择性地 install leader 发过来的 log entries。
+- leader：
+    - 如果 reply 为 matched，则更新 match index，并尝试更新 committed index。
+    - 如果 reply 为 index not matched，则把 next index 设置为 follower 发回的 last log index + 1。设该情况为 LA。
+    - 如果 reply 为 term not matched，leader 会在自己的 log 中找是否有 conflict term 的 log entry
+        - 如果找到了，则会把 next index 设置为 leader log 中 term 为 conflict term 的最后一个 log entry 的 index。设该情况为 LB。
+        - 如果没有找到，则会把 next index 设置为 follower 发回的 first conflict index。设该情况为 LC。
+
+对于为什么需要这样做，我目前并没有发现一个合理的 formal 解释。对于这样做的正确性，我也不能给出一个 formal 的 proof。我只能以我在 debug、分析日志时看到的一些典型场景对这个方法进行阐述。
+
+首先我们考虑什么时候 follower 在接收 append entries RPC 时会发现 log inconsistency。假设一个没有 crash、没有 partition 的场景。集群启动后，一个 follower 竞选为某个 term 的 leader，然后它开始接收 server 的 operations。每接收一个 operation，leader 会把它 wrap 为 log entry，然后 broadcast append entries，以 replicate 这个 log entry。如果由于网络原因，follower 没有收到这个 log entry，则 leader 会重发。当且仅当 leader 收到 follower 成功 replicate 的 reply 后，leader 才会更新关于这个 follower 的 next index。
+
+假设一个 follower 运行很慢，或者被 partition 了，leader 都不会更新关于这个 follower 的 next index。假设一个 follower crash 了，或者刚加入集群，leader 首先会发送一个 install snapshot 给它，待 follower 成功 install snapshot 后，leader 会将 next index 设为 snapshot index + 1。也就是说，不管 follower 发生了，leader 都不会改变 next index，则 leader 发送过来的 append entries 永远不会被 reject。
+
+但是，如果有 crash 或 partition 等情况，集群就可能换新 leader、或者旧 leader 重新竞选为新 leader，那么 `leader 不会改变 next index` 这个 invariant property 就会被破坏，此时 follower 就可能检测到 log inconsistency。下面，我就以几个典型场景分析 accelerated log backtracking 的 reasoning。
+
+场景一：
+
+S1 follower log: 4 5 5 5 5
+
+S2 leader log: 4 5 5 6 6
+
+上面的数字表示 log entry 的 term，每个数字所处的位置表示 log entry 的 index，从左往右从 0 开始计数。
+
+出现这个场景的原因是：S1 在 term 5 时是 leader，然后被 partition 了。在 S1 automatic step down 之前，它接收了来自 server 的两个 operations，并把它们 append 到 log 的最后。之后 S2 通过选举成为了 term 6 的 leader，也接收了来自 server 的两个 operations。
+
+当 partition 恢复之后，S1 收到了 S2 的 append entries，其中 prev log index = 2, prev log term = 5，这是根据 S2 成为 leader 时的 last log index = 2 来设置的。S1 收到以后发现 prev log index 有 log entry，且 term = prev log term，于是 log consistency check 会成功。之后，S1 会把 index = 2 以后的 log suffix 替换为 leader 发送过来的 log entries。
+
+这个场景是最常见的场景，它并不会引发 log consistency check 的 failure，所以它实际上和 accelerated log backtracking 没关系。我把它列出来，是因为它确实很典型。
+
+场景二：
+
+S1 follower log: 4 5 5 5 5
+
+S2 leader log: 4 5 5 6 6
+
+S1、S2 的 log 与场景一完全一致，但是现在情况有一点不同。首先我们重述一下没有变的部分：S1 在 term 5 时是 leader，然后被 partition 了。在 S1 automatic step down 之前，它接收了来自 server 的两个 operations，并把它们 append 到 log 的最后。之后 S2 通过选举成为了 term 6 的 leader，也接收了来自 server 的两个 operations。
+
+S2 在接收到这两个 operations 后，对它们进行 replication。此时，S1 与 S2 之间的 partition 还没有修复，因此 S1 收不到 append entries RPC。过一会，S2 crash 了。之后 S2 restart，然后竞选为 term 7 的 leader，则它会把 next index 初始化为 last log index + 1 = 5。此时，partition 修复了。S2 随即进行了一次 heartbeat，其中 prev log index = 4，prev log term = 6。
+
+S1 收到 heartbeat 后，发现 prev log index 处有 log entry，但是 term ≠ prev log term，即发生了 term conflict，即对应情况 FB。S1 此时会把 first conflict index 设为 1，然后 reply term not matched。
+
+S2 收到 reply 后，发现自己的 log 中有 term = 5 的 log entries，则对应情况 LB。S2 于是把 next index 设置为 2。在随后的 append entries 或 heartbeat 中，prev log index = 1。显然，S1 与 S2 的 log 在 prev log index 及之前都是 matched，则 log inconsistency 被 resolve。
+
+场景三：
+
+S1 follower log: 4 4 4 
+
+S2 leader log: 4 4 4 4 4 
+
+出现这个场景的原因是：S1、S2 在 term 4 较长的一段时间内 log 都是同步的。在此期间，S1 是 follower，S2 是 leader。之后，S1 被 partition 了。在 S1 被 partition 的这段期间，S2 作为 leader 正常接收 server 的 commands。在 append 一些 log entries，S2 crash 了。
+
+过一会，S2 restart，重新竞选为 term = 5 的 leader，并把 next index 初始化为 last log index + 1 = 5。此时，partition 被修复了。随后，S2 进行一次 heartbeat。S1 收到 heartbeat 后，发现 prev log index 处没有 log entry，即发生了 index conflict，即对应情况 FA。S1 则会 reply index not matched，并把 last log index = 3 发回给 S2。
+
+S2 收到 reply 后，对比 leader last log index 和 follower last log index，发现 follower 的 log 确实更短，即对应情况 LA。于是把 next index 设置为 follower last log index + 1。在随后的 append entries 或 heartbeat 中，prev log index = 2。显然，S1 与 S2 的 log 在 prev log index 及之前都是 matched，则 log inconsistency 被 resolve。
+
+场景四：
+
+S1 follower log: 4 4 4 5 5 
+
+S2 leader log: 4 4 4 6 6
+
+出现这个场景的原因是：S1、S2 在 term 4 的较长的一段时间内 log 都是同步的。在此期间，S1 是 leader，S2 是 follower。之后，S2 被 partition 了。S1 随后 crash 了一次，然后又竞选为 term 5 的 leader。在 term 5 期间，S1 接收了来自 server 的两个 operations，但是在 commit 它们之前就被 partition 了。
+
+随后，对 S2 的 partition 修复了，且 S2 竞选为 term 6 的 leader。S2 接收了来自 server 的两个 operations，并 append 了它们。S2 随后又发生了 crash。在 restart 后，S2 竞选为 term 7 的 leader，并把 next index 初始化为 last log index + 1 = 5。此时，对 S1 的 partition 修复了，于是 S1 收到了 S2 的 append entries RPC，其中 prev log index = 4，prev log term = 6。
+
+S1 发现 prev log index 处存在 log entry，但其 term ≠ prev log term，即发生了 term conflict，即对应情况 FB。S1 此时会把 first conflict index 设为 3，然后 reply term not matched。
+
+S2 收到 reply 后，发现自己的 log 中没有 term = 5 的 log entries，则对应情况 LC。S2 于是把 next index 设置为 3。在随后的 append entries 或 heartbeat 中，prev log index = 2。显然，S1 与 S2 的 log 在 prev log index 及之前都是 matched，则 log inconsistency 被 resolve。
+
+通过以上分析，我们发现 lab spec 所给出的 accelerated log backtracking 算法能够应对以上所有场景。当然可能还有很多其它场景，我并没有列举出来，但根据我的测试，该方法应该都能正确应对。下面我们就来讨论这个算法的 reasoning。
+
+为什么 follower 在 index not matched 时，需要发回 last log index 呢？这是因为 leader 发送过来的 prev log index 就是本次 RPC 所携带的最小的 log index。follower 没有足够的信息判断更之前的 log 的 consistency，它唯一能做的就是直接告诉 leader 自己的 last log index，这样 leader 就不需要使用 decrement 来很慢地 backtrack log。
+
+为什么 follower 在 term not matched 时，需要发回 conflict term 和 first conflict index 呢？对于 conflict term，它是为了让 leader 去判断的。对于 first conflict index，为什么是 first，而不是 last 或者其它？这是因为我们 accelerated log backtracking 的目的是尽可能地让 leader 下次发送过来的 append entries 或 heartbeat 不会引发 follower 的 log consistency check fail。由于 follower 与 leader 的一部分 log prefix 肯定是 match 的，因此把 conflict index 设置为 first conflict index 就可以把下一次要匹配的 log prefix 的长度尽可能地缩短，这就提高了下一次 match 的成功率。只要 match 了，那么之后 follower 就可以直接 replace its log with leader’s log。
+
+为什么 leader 在收到 term not matched reply，且发现有 term = conflict term 的 log entry 时，会把 next index 设为 the index of the last log entry with conflict term 呢？为什么是 last？说实话，我并不能给出非常合理的解释。我认为设置为 first 是更保险的行为，因为据上面所述，这样可以缩短下次要匹配的 log prefix 的长度，以提高下次 match 的成功率。但是另一方面，由于存在 log entry，其 term = conflict term，这就表示 leader 与 follower 在 conflict term 时的大部分时间应该都是同步的，即是场景二或类似的场景。那么这种情况下，虽然设置为 first 肯定是更保险的行为，设置为 last 肯定也是正确的行为，并且其可以减少需要发送的 log entries 的数量。
+
+为什么 leader 在收到 term not matched reply，且发现没有 term = conflict term 的 log entry，会把 next index 设为 first conflict index 呢？这个其实应该就是为了应对场景四或类似的场景。如果没有 term = conflict term 的 log entry，而 raft 以 leader 的 log 为准，那么就说明 follower 中 term = conflict term 的 log entries 或许都需要被 discard。那么 follower 把 first conflict index 传给 leader，就是让 leader 通过设置 next index 将 follower 中的 conflict log entries 都跳过，而去直接匹配有可能 match 的 log prefix。故，leader 应该将 next index 设为 first conflict index。这也对应了 raft 论文说的一句话：
+
+> With this information, the leader can decrement nextIndex to bypass all of the conflicting entries in that term; one AppendEntries RPC will be required for each term with conflicting entries, rather than one RPC per entry.
+> 
+
+最后，要特别提出的是，不管发生任何情况，leader 都不能把 next index 设为超过 leader last log index + 1，否则可能会发生一些错误，例如 log slicing, indexing 的一些错误。
+
+## 关于 match index 和 next index
+
+match index 是由 leader 用来更新 committed index 的。match index 保证了 leader 与 follower 在 match index 及之前的 log 都是一致的。next index 是用来指示 leader 下一次应该发送 follower 哪些 log entries。
+
+虽然有些时候，我们会根据 match index + 1 来更新 next index，但实际上它们完全不是同一个东西。完全可以合理地认为，它们俩没有任何直接联系。
 
 ## 哪些 state 需要被 persist？
 
@@ -58,7 +196,7 @@
 
 总结而言，committed index 没有必要 persist，但是既然 log entries 被 persist 了，那么 persist committed index 是很自然、直接的行为，可以稍稍提高性能。applied index 要不要 persist，需要看 server 层的 state machine 的 persist 的设计，不能盲目地 persist 了事。所以很多构建在 raft 之上的一些应用，都会把应用层的 storage 和 raft 层的 storage 分开，这给系统设计带来了更高的 flexibility。
 
-在我的设计中，committed index 和 applied index 都被 persist 了。
+在我的设计中，committed index 和 applied index 都没有被 persist。
 
 ### log entries
 
@@ -204,7 +342,7 @@ tester 维护一个 cfg，其中保存了每个 raft peer 通过 applyCh 发送�
 
 也就是说，raft restart 时需要 read snapshot。当然，不需要 ingest snapshot，因为 ingestion 是 server 层的事。raft 也不需要把 snapshot 传给 server 层，因为 server 层 restart 时会自行 read and ingest snapshot。
 
-## garbage collection, snapshotting, log compaction,
+## garbage collection, snapshotting, log compaction
 
 这是三个容易混淆的、有联系的概念。
 
@@ -484,14 +622,14 @@ lab3 partB 的很多测试都是共用 `GenericTest` 这个测试函数，根据
 - 目前，raft 层与 server 层使用 unbuffered channel 进行通信。在很多的实现中，server 层是每次从 applyCh 拿一个 apply msg，execute 它，然后再继续拿下一个 apply msg。显然，这样做使得 server 层和 raft 层的 performance 都会降低。所以可以在 server 层开一个独立的线程，这个线程只负责从 applyCh 中拿 apply msg。每拿到一个 msg，都会存到一个 buffer 中，然后通知 executor 线程。executor 收到通知以后，再去 buffer 中拿 msg，顺序地去执行它们。这样做，不仅可以降低 raft 层与 server 层通信的延迟，也可以给 raft 层与 server 层提供很多 batching 的可能性。例如 server 层批量处理 msg 以后，再一次性通知 raft 层。
 - 目前，server 层 snapshot 的操作与 execute operation 的操作都是由唯一的 executor 去执行。由于 snapshot 涉及到 disk io，且 snapshot size 通常会很大，因此 snapshot 相关的操作会 block execute operation 很久。可以在 server 层创建一个 minitor 线程，它周期性地监测 raft state size 和 server state size。如果发现达到了设定的 garbage collection 阈值，则开始生成一个 snapshot。待 snapshot 生成之后，再通知 executor 去 ingest snapshot。
 - 对于测试过程中产生的大量日志，可以用一些正则表达式工具来提取我们需要的信息。例如 unix 系统中的 grep。对于不太熟悉的命令和正则表达式，可以请求 ChatGPT 的帮助。
-- 使用一些自己看得懂的符号来简化、美化日志输出。例如， `N1 v-> N2` 表示 N1 vote 给 N2， `N1 !v-> N2` 表示 N1 拒绝 vote 给 N2， `N1 e-> N2` 表示 N1 发送 log entries 给 N2，等等。至于一些名词，例如 prev log index, prev log term, last log index, last log term 等都可以用简称来表示，例如 PLI, PLT, LI, LT。因为日志输出不是给别人看的，而只是给自己看的，所以能简化就简化。关于如何美化日志和更好地查看日志，参考：[https://blog.josejg.com/debugging-pretty/](https://blog.josejg.com/debugging-pretty/)。
+- 使用一些自己看得懂的符号来简化、美化日志输出。例如， `N1 v-> N2` 表示 N1 vote 给 N2， `N1 !v-> N2` 表示 N1 拒绝 vote 给 N2， `N1 e-> N2` 表示 N1 发送 log entries 给 N2，等等。至于一些名词，例如 prev log index, prev log term, last log index, last log term 等都可以用简称来表示，例如 PLI, PLT, LI, LT。因为日志输出不是给别人看的，而只是给自己看的，所以能简化就简化。
 - raft 中每个 RPC handler 的入口处都设置一个统一的 `checkMessage` 函数。不管什么类型的 RPC，都会被 wrap 成 Message 类型。 `checkMessage` 函数首先会进行 term 相关的检查，例如 ignore stale-term message，step down if receive a higher-term message 等。之后会根据 raft peer 的 state（即 follower、candidate、leader）进行检查，例如 request vote 只能让 follower 来 handle，request vote reply 只能让 candidate 来 handle。只要 state 不符合规则，就直接 ignore。特别地，在 handle RPC reply 时，还需要检查一些 essential state，例如 next index 是否还是之前发送时的 index。 如果 `checkMessage` 中的这些检查是比较完备的，那么之后的 RPC handling 都会非常顺利，不需要考虑很多 corner cases。很多 bugs 都是由于缺乏完备的 check message 机制导致的。
 - lab 的 persistence 是通过一个 persister 来实现的。这个 persister 有两个 field，分别用来存储 saved raft state 和 snapshot。为了保证对 raft state 和 snapshot 的写入是同步的，persister 只提供了唯一的 `Save` 接口，即必须同时 persist raft state 和 snapshot。这就使得 raft 层每次需要 persist raft state 时，都需要同时 persist snapshot。但这是可接受的，因为 persister 是维护在内存中的，只涉及到内存中的 clone，不涉及 disk io，因此速度很快。另一方面，通常 server 层与 raft 层会有各自独立的 storage 层，因为 server 层的读写要求和 raft 层的读写要求通常很不一致。例如 raft 层写 log entry 通常是顺序 append，而 server 层很有可能不是。根据不同的读写 workload 选择不同的 storage engine 肯定是比较好的做法。然后，由于 lab 只提供了唯一的 `Save` 接口，这使得 server 层的 storage 与 raft 层的 storage 混合，这不是一个推荐的做法。
 - 在统计 quorum votes, quorum matched index, quorum reply 等时，可以把初始值设为 1，然后跳过 me。这样可以避免很多为 me 设置或更新 state 的代码，避免忘记更新而发生错误。
 - 在执行 persist 时，应该使用 defer persist。这是考虑到 crash consistency。例如由于一次 recv request vote，导致 term 和 votedFor 都发生了变化。如果我们在更改 term 和 votedFor 时都独自进行 persist，那么可能在这两次 persist 之间发生 crash。那么本来由于一次 recv request vote 而应该同步修改的 term 和 votedFor，在 restart 之后，却没有同步地被 restore。那么这是否一定程度上违反了 crash consistency？相同的 reasoning 同样作用于 log replication。如果一次 recv append entries 导致我们 discard 一些 entries，然后又 append 一些 entries。如果我们在 discard 和 append 时都分别做 persist，假设在这两次 persist 之间发生了 crash，在 recover 后，我们的 entries 却没有得到同步的 restore。那么这是否也一定程度上违反了 crash consistency？那么一个推荐的做法就是在每次 handle RPC 时，defer 一个 persist。这样，由于 handle 一个 RPC 所引发的 state 的变化，它们的 persist 是同步的。那么在 restart 后它们的 restore 也是同步的。这就维护了 crash consistency。我并不清楚这样做的必要性，可能是不必要的。但是显然，这样做是更保险的操作，不会有是否违反 crash consistency 的疑虑。并且在代码编写上也更简单、简洁。
 - 在收到 install snapshot request，应该先让 raft 层 log compaction，再 forward 给 server。还是让 raft 层先 forward 给 server，然后再让 server 层通知 raft 层进行 log compaction 呢？我选择的是第一种做法，但是我觉得第二种做法应该也是可行的，甚至可能是更推荐的做法。这就引出了一个更大的问题：对于 snapshot 相关的 RPC，应该由 raft 层发出和 handle，还是由 server 层发出和 handle 呢？这里我保留我的疑虑。另一方面，我也知道，实际上，在一个比较完善的系统中，肯定是有一个自设计的 transport layer 的，所有的 message 交互肯定是要经过这个 transport layer。
 
-## 关于 coding 的技巧
+## coding 的一些技巧
 
 - 封装 log 操作到 Log struct，提供 first index, last index, truncate suffix, slice, committed to, applied to, new committed entries 等需要的操作。使用 dummy log entry 以简化 log indexing 操作。把 snapshot index 和 snapshot term 放在 dummy log entry 中。
 - 根据逻辑、功能组织代码到不同的文件。
@@ -500,7 +638,7 @@ lab3 partB 的很多测试都是共用 `GenericTest` 这个测试函数，根据
 - 如果两个操作是紧密耦合的，即做了这个操作，那么另一个也必须做，那么就应该把它们封装它一个函数中。特别的，有些需要打印日志的操作要和打印日志的代码封装在一起。
 - 使用一个 logger 来管理日志输出。所有的日志输出都通过 logger 提供的方法接口进行。
 - 尽量避免使用 bool 量，因为 bool 量很多时候是一个二极管，并不能很好地细分所有可能的取值，这使得 bool 量有些时候会产生歧义。
-- 避免使用 channel、select 等易出错的通知、并发手段。如果性能尚可，尽量使用 sleep polling，或 condition variable。
+- 避免使用 channel、select 等易出错的通知、并发手段。如果性能尚可，尽量使用 sleep polling，或 condition variable。使用 condition variable 时，应注意处理 spurious wakeup 和 ignore notification 等常见问题。
 - 不要开很多 dedicated worker threads，如果可能，把多个线程融合在一起，然后根据 role 来判断。
 - 不要写很多繁冗的注释，因为如果你对某个变量或者某个函数的作用理解错的话，你通过看错误的注释更容易陷进去，而没有发现自己的错误。不如写一篇 blog 或者笔记把整个框架写明白、画明白。然后把一些易错点和遇到的 bugs 再单独贴出来，并给出解释和解决方案。
 - 使用 enum 时，不要用 int 作为类型。一般使用 string。如果使用 int，那么 default value 为0，这可能导致原本不想设置为第一个 enum 类型，但是却错误地设置了。而使用 string，default value 为空字符串，这个错误就很容易分析出来。并且在打印日志的时候，string 类型也更方便。
@@ -509,6 +647,6 @@ lab3 partB 的很多测试都是共用 `GenericTest` 这个测试函数，根据
 - 注意 Go 的 copy 函数需要 dst 有足够的空间。
 - 注意 Go 对 map 的 iteration 是 non-deterministic，可以用 stable sort 来使其 deterministic。
 - 尽量避免使用 max, min 这种用来 work around issues 的东西。而应该使用明确的 handle code 来 resolve issues。这可以使得 bug 尽快地浮现。
-- 使用 unsigned 类型时应该十分谨慎，尤其对于 unsigned 类型参与的减法操作，要时刻注意是否有发生 underflow 的风险。
-- 考虑是否有可能发生 divide by zero 错误。
+- 使用 unsigned 类型时应该十分谨慎，尤其对于 unsigned 类型参与的减法操作，要时刻注意是否有发生 integer underflow 的风险。当然对于 integer overflow，也需要注意。
+- 做除法时，考虑是否有可能发生 divide by zero 错误。
 - 每一个 lock 都应该有配套的 unlock。我在实现的过程中，遇到过一个由此问题引发的 bug。通过日志发现 raft 集群在正确地运行，但是测试却超时了。检测到是 tester spawn 的一个 client 调用 raft 的 Start 接口时 block 在那里。后来发现是我的 committer thread 在 wake up 拿到 lock 之后，此时正好 raft peer 被 kill 了。则 committer 的 for loop 在检测到 killed 为真的情况下就中止了。我在 for loop 之前 lock 了，但是忘记在 for loop 之后 unlock，这就导致一个 killed raft peer 一直 grab 这个 lock，从而导致 client 在调用 Start 时拿不到 lock，发生了非常规的死锁。
