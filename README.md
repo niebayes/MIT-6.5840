@@ -32,7 +32,13 @@
 
 [https://blog.josejg.com/debugging-pretty/](https://blog.josejg.com/debugging-pretty/)
 
-### Figure8 讲了什么？如何规避 figure8 所展示的问题
+## Raft 框架图
+![Untitled](docs/README_assets/raft.png)
+
+## Key-Value Service 框架图
+![Untitled](docs/README_assets/server.png)
+
+## Figure8 讲了什么？如何规避 figure8 所展示的问题
 
 ![Untitled](docs/README_assets/figure8.png)
 

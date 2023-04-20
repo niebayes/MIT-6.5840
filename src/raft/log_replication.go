@@ -184,6 +184,9 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 			rf.peerTrackers[reply.From].nextIndex = rf.log.lastIndex() + 1
 		}
 
+		// broadcast immediately so that followers can quickly catch up.
+		rf.broadcastAppendEntries(true)
+
 	case TermNotMatched:
 		newNextIndex := reply.FirstConflictIndex
 		// warning: skip the snapshot index since it cannot conflict if all goes well.
@@ -196,5 +199,8 @@ func (rf *Raft) handleAppendEntriesReply(args *AppendEntriesArgs, reply *AppendE
 
 		// FIXME: figure out whether the next index is eligible to be advanced.
 		rf.peerTrackers[reply.From].nextIndex = newNextIndex
+
+		// broadcast immediately so that followers can quickly catch up.
+		rf.broadcastAppendEntries(true)
 	}
 }
