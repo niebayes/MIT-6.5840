@@ -318,6 +318,7 @@ tester 维护一个 cfg，其中保存了每个 raft peer 通过 applyCh 发送�
 - read index: 参考 TiKV [https://cn.pingcap.com/blog/lease-read](https://cn.pingcap.com/blog/lease-read)
 - lease read: 参考 TiKV [https://cn.pingcap.com/blog/lease-read](https://cn.pingcap.com/blog/lease-read)
 - out-of-order log replication, commit, apply: 参考 [http://www.vldb.org/pvldb/vol11/p1849-cao.pdf](http://www.vldb.org/pvldb/vol11/p1849-cao.pdf)
+- flow control: leader 为每个 follower 维护一个 msg buffer。每当 leader 发送一条 msg（通常只考虑 append entries RPC）给 follower 时，便 append 一个 msg entry 到这个 buffer 中。当 leader 收到 follower 对于某条 msg 的 reply 后，再 remove 对应的 msg entry。当这个 buffer 满了的时候，leader 会降低发送 msg 的频率甚至可以选择不再发送新的 msg。
 
 ## raft 需要 no-op 吗？
 
