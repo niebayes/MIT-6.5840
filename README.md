@@ -332,7 +332,7 @@ tester 维护一个 cfg，其中保存了每个 raft peer 通过 applyCh 发送�
 
 那么为什么 server 层不需要维护 snapshot index 呢？server 层有两个地方会接触到 snapshot。一个是做 checkpoint 的时候，此时 server 层会生成一个 snapshot，这个 snapshot 对应的最新的 log entry 的 index 为 snapshot index。在生成 snapshot 以后，server 层会立即调用 raft 层接口，告知 raft 层自己已生成了一份新的 snapshot。显然，在这个过程中，我们并不需要让 server 层维护 snapshot index。在有些实现中，会把 snapshot index 写入到 snapshot 里面，这在有些时候是有用的，但是对于这个 lab 而言是不必要的。
 
-另一个需要重点讨论的是，为什么 server 层不需要维护 last applied 呢？从模块解耦的角度来讲，
+另一个需要重点讨论的是，为什么 server 层不需要维护 last applied 呢？从模块解耦的角度来讲，last applied 是一个 log index，因此是 raft 层的东西，本身就不应该出现在 server 层。另一方面，虽然我实现的是 async commit，但是只有一个 committer thread 在做 commit 这件事，也就是说 server 层所收到的 committed log entries 一定是严格有序的。既然保证了顺序，那么 server 层就不需要维护 last applied。有些 raft 库实现的是乱序提交，我对其并不了解，所以此处不对这种情况进行讨论。
 
 ## 一些 timeout, tick interval 是如何设计的？
 

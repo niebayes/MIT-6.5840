@@ -117,7 +117,7 @@ func (rf *Raft) checkState(m Message) bool {
 		// the checking of next index ensures it's exactly the reply corresponding to the last sent AppendEntries.
 		eligible = rf.state == Leader && rf.term == m.ArgsTerm && rf.peerTrackers[m.From].nextIndex-1 == m.PrevLogIndex
 	case SnapReply:
-		// the lag-behind checking ensures the reply corresponds to the last send InstallSnapshot.
+		// the lag-behind checking ensures the reply corresponds to the last sent InstallSnapshot.
 		eligible = rf.state == Leader && rf.term == m.ArgsTerm && rf.lagBehindSnapshot(m.From)
 
 	default:
