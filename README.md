@@ -16,7 +16,7 @@
 
 加分项：
 1. 学习过知名计算机公开课，包括但不限于 MIT 6.S081（MIT 6.828）、MIT 6.824（MIT 6.5840）、CMU 15-445/15721、UCB CS186 等课程，或其他国内外知名课程。 自主完成课程的编程作业，阅读并研究过课程配套的论文或资料；
-2. 参与过数据库开源项目，如 Apache Doris、ClickHouse、GreptimeDB、RisingWave、Databend、Neon、VictoriaMetrics、TimescaleDB、InfluxDB 等。提交过有一定影响力的 PR，或较深度地参与过开源社区建设；
+2. 参与过数据库开源项目，如 TiDB、Apache Doris、ClickHouse、GreptimeDB、RisingWave、Databend、Neon、VictoriaMetrics、TimescaleDB、InfluxDB 等。提交过有一定影响力的 PR，或较深度地参与过开源社区建设；
 3. 深入学习过数据库理论知识，有论文产出最佳；
 
 薪资福利：
